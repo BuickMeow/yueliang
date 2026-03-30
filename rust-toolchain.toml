@@ -1,0 +1,4 @@
+[toolchain]
+channel = "stable" # 未来可能还会接着改
+profile = "minimal" # 不用下载官方文档等东西
+components = ["rustfmt", "clippy"]
