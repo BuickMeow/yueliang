@@ -1,7 +1,7 @@
 //use midly::stream::DefaultBuffer;
 use nih_plug::prelude::*;
 use nih_plug_egui::EguiState;
-use std::sync::Arc;
+use std::sync::{Arc, mpsc::channel};
 
 //mod editor;
 mod engine;
@@ -29,8 +29,8 @@ pub struct YueliangParams {
     #[id = "gain"]
     pub gain: FloatParam,
 
-    #[id = "max_poly"]
-    pub max_polyphony: IntParam,
+    #[id = "max_voices"]
+    pub max_voices: IntParam,
 
     #[id = "vel_thresh"]
     pub velocity_threshold: IntParam,
@@ -63,8 +63,8 @@ impl Default for YueliangParams {
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
 
-            max_polyphony: IntParam::new(
-                "Max Polyphony",
+            max_voices: IntParam::new(
+                "Max Voices",
                 1000,
                 IntRange::Linear { min: 1, max: 100000 },
             ),
@@ -87,14 +87,14 @@ impl Default for YueliangParams {
 // 3 主插件结构
 pub struct Yueliang {
     params: Arc<YueliangParams>,
-    //engine: engine::SynthEngine,
+    engine: Option<engine::SynthEngine>,
 }
 
 impl Default for Yueliang {
     fn default() -> Self {
         Self {
             params: Arc::new(YueliangParams::default()),
-
+            engine: None,
             //接下来engine和mididata也要new？尚未确定
         }
     }
@@ -135,23 +135,56 @@ impl Plugin for Yueliang {
         buffer_config: &BufferConfig,           // 采样率/缓冲区大小
         _context: &mut impl InitContext<Self>,  // DAW初始化上下文
     ) -> bool {
+        // 获取参数值
+        let max_voices = self.params.max_voices.value() as usize;
+        let sample_rate = buffer_config.sample_rate;
+
+        // 创建引擎
+        self.engine = Some(engine::SynthEngine::new(sample_rate, max_voices));
+
+        // TODO: 加载默认音色库
+
         true
         // 因为完成度不高（或者说哪都还没开始），所以现阶段不写TODO
         // 接下来，要创建xsynth合成器，加载音色库，应用参数设置等
     }
 
     fn reset(&mut self) {
-        // 还没做
+        if let Some(ref mut engine) = self.engine {
+            engine.reset();
+        }
     }
 
     fn process(
             &mut self,
             buffer: &mut Buffer,
             _aux: &mut AuxiliaryBuffers,
-            context: &mut impl ProcessContext<Self>,
-            
+            _context: &mut impl ProcessContext<Self>,
         ) -> ProcessStatus {
-            let _transport = context.transport();
+            // 获取gain参数
+            let gain = self.params.gain.smoothed.next();
+
+            if let Some(ref mut engine) = self.engine {
+                let num_frames = buffer.samples(); 
+                // 准备左右声道缓冲区
+                let mut left = vec![0.0f32; num_frames];
+                let mut right = vec![0.0f32; num_frames];
+
+                // 渲染音频
+                engine.render(&mut left, &mut right, num_frames);
+
+                // 写入DAW缓冲区并应用gain
+                for (i, mut channel_samples) in buffer.iter_samples().enumerate() {
+                    let l = left[i] * gain;
+                    let r = right[i] * gain;
+
+                    // buffer是逐采样迭代
+                    let mut iter = channel_samples.iter_mut();
+                    *iter.next().unwrap() = l;
+                    *iter.next().unwrap() = r;
+                }
+            }
+            //let _transport = context.transport();
 
             // AI给了以下步骤建议，目前尚未确定如何做
             // 1. 获取当前DAW时间 (_transport.pos_samples())
@@ -161,7 +194,6 @@ impl Plugin for Yueliang {
             // 5. 发给 xsynth 引擎渲染
             // 6. 应用 gain 和 limiter
             // 7. 写入 buffer
-
 
             ProcessStatus::Normal
     }
