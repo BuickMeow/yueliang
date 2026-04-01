@@ -88,6 +88,7 @@ impl Default for YueliangParams {
 pub struct Yueliang {
     params: Arc<YueliangParams>,
     engine: Option<engine::SynthEngine>,
+    test_tone: Option<engine::TestToneGenerator>,
 }
 
 impl Default for Yueliang {
@@ -96,6 +97,7 @@ impl Default for Yueliang {
             params: Arc::new(YueliangParams::default()),
             engine: None,
             //接下来engine和mididata也要new？尚未确定
+            test_tone: None,
         }
     }
 }
@@ -136,11 +138,13 @@ impl Plugin for Yueliang {
         _context: &mut impl InitContext<Self>,  // DAW初始化上下文
     ) -> bool {
         // 获取参数值
-        let max_voices = self.params.max_voices.value() as usize;
-        let sample_rate = buffer_config.sample_rate;
+        //let max_voices = self.params.max_voices.value() as usize;
+        //let sample_rate = buffer_config.sample_rate;
 
         // 创建引擎
-        self.engine = Some(engine::SynthEngine::new(sample_rate, max_voices));
+        //self.engine = Some(engine::SynthEngine::new(sample_rate, max_voices));
+
+        self.test_tone = Some(engine::TestToneGenerator::new(440.0, buffer_config.sample_rate));
 
         // TODO: 加载默认音色库
 
@@ -164,7 +168,7 @@ impl Plugin for Yueliang {
             // 获取gain参数
             let gain = self.params.gain.smoothed.next();
 
-            if let Some(ref mut engine) = self.engine {
+            /*if let Some(ref mut engine) = self.engine {
                 let num_frames = buffer.samples(); 
                 // 准备左右声道缓冲区
                 let mut left = vec![0.0f32; num_frames];
@@ -183,7 +187,30 @@ impl Plugin for Yueliang {
                     *iter.next().unwrap() = l;
                     *iter.next().unwrap() = r;
                 }
+            }*/
+
+            //只是用来播放正弦波
+            if let Some(ref mut tone) = self.test_tone {
+                let num_frames = buffer.samples(); 
+                // 准备左右声道缓冲区
+                let mut left = vec![0.0f32; num_frames];
+                let mut right = vec![0.0f32; num_frames];
+                
+                tone.render(&mut left);
+                tone.render(&mut right);
+
+                // 写入DAW缓冲区并应用gain
+                for (i, mut channel_samples) in buffer.iter_samples().enumerate() {
+                    let l = left[i] * gain;
+                    let r = right[i] * gain;
+
+                    // buffer是逐采样迭代
+                    let mut iter = channel_samples.iter_mut();
+                    *iter.next().unwrap() = l;
+                    *iter.next().unwrap() = r;
+                }
             }
+
             //let _transport = context.transport();
 
             // AI给了以下步骤建议，目前尚未确定如何做
