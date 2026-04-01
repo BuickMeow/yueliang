@@ -5,7 +5,7 @@
 
 ## @BuickMeow
 
-在BuickMeow/xsynth中，Enderman-bm创建的这些commit相比原版BlackMIDIDevs/xsynth，更靠谱吗？我听他说应该是修复了一些性能问题，但我有点不信任他不知道是不是乱改的
+在BuickMeow/xsynth中，Enderman-bm创建的这些commit相比原版BlackMIDIDevs/xsynth，更靠谱吗？我听他说应该是修复了一些性能问题。
 
 ## Copilot
 

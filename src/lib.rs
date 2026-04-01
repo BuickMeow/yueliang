@@ -24,8 +24,9 @@ impl Default for InterpolationMode {
 // 2 参数结构(暴露给DAW的核心参数)
 #[derive(Params)]
 pub struct YueliangParams {
-    #[persist = "editor_state"]// 这里editorstate应该是_还是-？
+    #[persist = "editor_state"]
     pub editor_state: Arc<EguiState>,
+    
     #[id = "gain"]
     pub gain: FloatParam,
 
@@ -52,13 +53,14 @@ impl Default for YueliangParams {
 
             gain: FloatParam::new(
                 "Gain",
-                util::db_to_gain(0.0),
+                0.0,    // 0dB
                 FloatRange::Linear {
-                    min: util::db_to_gain(-30.0),
-                    max: util::db_to_gain(30.0),
+                    min: 0.0,   // -inf dB
+                    max: 2.0,   // 大约+6dB
                 },
             )
-            .with_smoother(SmoothingStyle::Logarithmic(5.0))
+            //.with_smoother(SmoothingStyle::Linear(10.0))  这个我一直改不好，暂时搁置
+            .with_smoother(SmoothingStyle::None)
             .with_unit(" dB")
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
@@ -138,8 +140,8 @@ impl Plugin for Yueliang {
         _context: &mut impl InitContext<Self>,  // DAW初始化上下文
     ) -> bool {
         // 获取参数值
-        //let max_voices = self.params.max_voices.value() as usize;
-        //let sample_rate = buffer_config.sample_rate;
+        let max_voices = self.params.max_voices.value() as usize;
+        let sample_rate = buffer_config.sample_rate;
 
         // 创建引擎
         //self.engine = Some(engine::SynthEngine::new(sample_rate, max_voices));
@@ -149,7 +151,7 @@ impl Plugin for Yueliang {
         // TODO: 加载默认音色库
 
         true
-        // 因为完成度不高（或者说哪都还没开始），所以现阶段不写TODO
+        // 因为完成度不高（或者说哪都还没开始），所以现阶段写TODO会比较少
         // 接下来，要创建xsynth合成器，加载音色库，应用参数设置等
     }
 
@@ -166,7 +168,9 @@ impl Plugin for Yueliang {
             _context: &mut impl ProcessContext<Self>,
         ) -> ProcessStatus {
             // 获取gain参数
-            let gain = self.params.gain.smoothed.next();
+            let gain_db = self.params.gain.smoothed.next();
+            //let gain_db = self.params.gain.value();
+            let gain = util::db_to_gain(gain_db);
 
             /*if let Some(ref mut engine) = self.engine {
                 let num_frames = buffer.samples(); 
@@ -189,7 +193,7 @@ impl Plugin for Yueliang {
                 }
             }*/
 
-            //只是用来播放正弦波
+            // 只是用来播放正弦波
             if let Some(ref mut tone) = self.test_tone {
                 let num_frames = buffer.samples(); 
                 // 准备左右声道缓冲区
