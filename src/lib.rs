@@ -58,7 +58,7 @@ impl Default for YueliangParams {
                     max: util::db_to_gain(30.0),
                 },
             )
-            .with_smoother(SmoothingStyle::Logarithmic(50.0))
+            .with_smoother(SmoothingStyle::Logarithmic(5.0))
             .with_unit(" dB")
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
@@ -196,8 +196,10 @@ impl Plugin for Yueliang {
                 let mut left = vec![0.0f32; num_frames];
                 let mut right = vec![0.0f32; num_frames];
                 
-                tone.render(&mut left);
-                tone.render(&mut right);
+                //tone.render(&mut left);
+                //tone.render(&mut right);
+
+                tone.render_stereo(&mut left, &mut right);
 
                 // 写入DAW缓冲区并应用gain
                 for (i, mut channel_samples) in buffer.iter_samples().enumerate() {

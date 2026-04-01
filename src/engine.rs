@@ -171,4 +171,19 @@ impl TestToneGenerator {
             }
         }
     }
+
+    pub fn render_stereo(&mut self, left: &mut [f32], right: &mut [f32]) {
+    let phase_increment = 2.0 * std::f32::consts::PI * self.frequency / self.sample_rate;
+    
+    for i in 0..left.len() {
+        let sample = self.phase.sin() * 0.1;
+        left[i] = sample;
+        right[i] = sample;  // 同样的信号到右声道
+        
+        self.phase += phase_increment;
+        if self.phase > 2.0 * std::f32::consts::PI {
+            self.phase -= 2.0 * std::f32::consts::PI;
+        }
+    }
+}
 }
