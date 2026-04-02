@@ -1,6 +1,6 @@
 # Yueliang 文档索引
 
-> 最后更新：2026-04-02
+> 最后更新：2026-04-02-10-57-52
 
 ---
 
@@ -69,9 +69,10 @@
 ### 阶段 3：启用 XSynth 引擎 ✅
 - [external/copilot-soundfont-loading.md](external/copilot-soundfont-loading.md)
 - [notes/debugging-techniques.md](notes/debugging-techniques.md) - 排查无声音问题的完整流程
+- [architecture/modules.md](architecture/modules.md) - 代码拆分后的模块职责
 
 ### 阶段 4：内部走带同步 🟡
-- 文档待创建
+- [architecture/modules.md](architecture/modules.md) - `midi_player` / `pipeline` / `midi_mapper` 设计
 
 ---
 
