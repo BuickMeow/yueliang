@@ -129,9 +129,7 @@ impl Plugin for Yueliang {
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
     }
-    /*fn accepts_bus_config(&self, config: &BusConfig) -> bool {
-        config.num_input_channels == 0 && config.num_output_channels == 2
-    }*/
+
 
     fn initialize(
         &mut self,
@@ -143,12 +141,11 @@ impl Plugin for Yueliang {
         let max_voices = self.params.max_voices.value() as usize;
         let sample_rate = buffer_config.sample_rate;
 
-        nih_log!("Time to load a soundfont");
+        //nih_log!("Time to load a soundfont");
 
         // 创建引擎
         //self.engine = Some(engine::SynthEngine::new(sample_rate, max_voices));
         //self.test_tone = Some(engine::TestToneGenerator::new(440.0, buffer_config.sample_rate));
-        // TODO: 加载默认音色库
 
         // 创建XSynth引擎
         let mut engine = engine::SynthEngine::new(sample_rate, max_voices);
@@ -212,7 +209,7 @@ impl Plugin for Yueliang {
                 // 渲染音频
                 engine.render(&mut left, &mut right, num_frames);
 
-                engine.send_test_note(); 
+                //engine.send_test_note(); 
 
                 // 写入DAW缓冲区并应用gain
                 for (i, mut channel_samples) in buffer.iter_samples().enumerate() {

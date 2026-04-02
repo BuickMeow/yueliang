@@ -1,6 +1,6 @@
 # Yueliang 文档索引
 
-> 最后更新：2026-04-01
+> 最后更新：2026-04-02
 
 ---
 
@@ -21,6 +21,7 @@
 
 - **[project/status.md](project/status.md)** - 当前阶段、TODO、里程碑
 - **[notes/redlines.md](notes/redlines.md)** - 实时音频开发红线（零分配、禁止操作）
+- **[notes/debugging-techniques.md](notes/debugging-techniques.md)** - 调试技巧与踩坑记录（文件日志、代码签名等）
 
 ### 🏗️ 架构设计
 
@@ -65,8 +66,12 @@
 - [knowledge/oscillator-phase-continuity.md](knowledge/oscillator-phase-continuity.md)
 - [knowledge/gain-parameter-design.md](knowledge/gain-parameter-design.md)
 
-### 阶段 3：启用 XSynth 引擎 🟡
+### 阶段 3：启用 XSynth 引擎 ✅
 - [external/copilot-soundfont-loading.md](external/copilot-soundfont-loading.md)
+- [notes/debugging-techniques.md](notes/debugging-techniques.md) - 排查无声音问题的完整流程
+
+### 阶段 4：内部走带同步 🟡
+- 文档待创建
 
 ---
 
