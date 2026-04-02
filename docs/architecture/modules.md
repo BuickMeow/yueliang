@@ -1,6 +1,6 @@
 # 模块结构
 
-> 最后更新：2026-04-02-10-56-11  
+> 最后更新：2026-04-02-14-24-11
 > 当前阶段：v0.0.1
 
 ## 文件组织
@@ -12,12 +12,14 @@ src/
 ├── engine.rs           # 模块聚合入口（pub mod / pub use）
 ├── engine/
 │   ├── synth.rs        # xsynth 封装（渲染、音色加载）
-│   ├── midi_player.rs  # MIDI 时间线调度器（走带同步、预过滤）
+│   ├── pipeline.rs     # 音频处理管线（gain、缓冲区写入）
+│   ├── midi_player.rs  # MIDI 时间线调度器（走带同步、事件分发）
 │   ├── midi_mapper.rs  # MIDI 协议映射层（纯函数）
-│   └── pipeline.rs     # 音频处理管线（gain、缓冲区写入）
+│   └── midi_filter.rs  # MIDI 预过滤层（力度过滤、强制最大力度）
 ├── data.rs             # 数据模块聚合入口
 ├── data/
-│   └── event.rs        # MIDI 领域模型（MidiEvent / MidiMessage）
+│   ├── event.rs        # MIDI 领域模型（MidiEvent / MidiMessage）
+│   └── midi_loader.rs  # MIDI 文件解析器（midly 封装，非实时）
 └── utils.rs            # 通用工具
 ```
 
@@ -49,19 +51,8 @@ src/
 - 音频读取（`read_samples` 包装，用于 `pipeline`）
 - 兼容渲染（`render`，保留用于测试）
 - 发送 XSynth 事件（`send_event`）
-- 测试音符（`send_test_note`）
-
-**engine/midi_player.rs**
-- 与 DAW Transport 同步
-- 管理内部 MIDI 事件队列
-- 力度过滤（`velocity_threshold`）
-- 强制最大力度（`force_max_velocity`）
-- 时间戳转换（samples ↔ ticks，阶段 4 完善）
-
-**engine/midi_mapper.rs**
-- 无状态纯函数
-- 将项目自定义 `MidiEvent` 映射为 `xsynth-core` 的 `SynthEvent`
-- 方便单元测试
+- 全通道静音（`reset` → `AllNotesOff`）
+- 暴露 `NUM_CHANNELS` 常量
 
 **engine/pipeline.rs**
 - 预分配交错采样缓冲区，避免音频线程堆分配
@@ -69,12 +60,40 @@ src/
 - 应用 `gain`（含平滑器）
 - 写入 DAW `Buffer`
 
+**engine/midi_player.rs**
+- 与 DAW Transport 同步
+- 管理内部 MIDI 事件队列
+- 播放头跳转检测（scrub / 循环）
+- 走带停止时触发全通道静音
+- 时间戳转换（DAW beats ↔ ticks）
+
+> 注意：`midi_player.rs` 不直接依赖 `midly` 或 `std::fs`，只接收已解析的事件流。
+
+**engine/midi_filter.rs**
+- 无状态纯函数
+- `velocity_threshold`：丢弃低于阈值的音符
+- `force_max_velocity`：将力度统一设为 127
+- 在 `midi_mapper` 之前执行，减少无效 voice 分配
+
+**engine/midi_mapper.rs**
+- 无状态纯函数
+- 将项目自定义 `MidiEvent` 映射为 `xsynth-core` 的 `SynthEvent`
+- 方便单元测试
+
 ### data
 数据模型，与音频线程解耦。
 
 **data/event.rs**
 - `MidiEvent` / `MidiMessage` 定义
-- 被 `midi_player` 和 `midi_mapper` 共享引用
+- 使用 `tick: u64` 作为速度无关的时间戳
+- 被 `midi_player`、`midi_filter`、`midi_mapper` 共享引用
+
+**data/midi_loader.rs**
+- 非实时文件解析模块
+- 使用 `midly` 读取 MIDI 文件
+- 提取 `PPQN` 和音符事件
+- 忽略 MIDI 原生 `SetTempo`，完全交给 DAW BPM 控制
+- 返回 `LoadedMidi { events, ppqn }`
 
 ### utils
 通用工具。
@@ -84,20 +103,23 @@ src/
 ## 线程模型
 
 ```
-┌──────────────┐         ┌──────────────┐
-│   GUI 线程    │◄───────►│  后台线程    │
-│  (editor)    │ arc-swap │  (loader)   │
-└──────┬───────┘         └──────────────┘
+┌──────────────┐         ┌──────────────────────────────┐
+│   GUI 线程    │◄───────►│        初始化/后台线程        │
+│  (editor)    │ arc-swap │  data::midi_loader (midly)  │
+└──────┬───────┘         └──────────────────────────────┘
        │
        │ 无锁队列
        ▼
-┌──────────────┐
-│  音频线程    │ ◄── 绝对不能分配内存
-│  (process)   │ ◄── 绝对不能加锁
-│  ├── midi_player.rs  │
-│  ├── pipeline.rs     │
-│  └── synth.rs        │
-└──────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                        音频线程                          │
+│  ◄── 绝对不能分配内存 / 绝对不能加锁                      │
+│                                                         │
+│  ├── engine::midi_player.rs   (走带同步 + 事件调度)      │
+│  ├── engine::midi_filter.rs   (力度过滤)                 │
+│  ├── engine::midi_mapper.rs   (协议转换)                 │
+│  ├── engine::synth.rs         (合成渲染)                 │
+│  └── engine::pipeline.rs      (gain + 缓冲区写入)        │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -106,25 +128,13 @@ src/
 
 ```
 lib.rs
- ├── editor.rs
- │
- ├── engine.rs
- │   ├── synth.rs ──────► xsynth-core
- │   ├── midi_mapper.rs ─┐
- │   ├── midi_player.rs ─┼──► data::event
- │   └── pipeline.rs     │
- │
- ├── data.rs ◄───────────┘
- │   └── event.rs
- │
- └── utils.rs
+├── engine
+│   ├── synth ◄────── pipeline
+│   ├── midi_player ◄── midi_filter
+│   │                    └── midi_mapper
+│   └── midi_mapper
+├── data
+│   ├── event ◄────── midi_loader
+│   └── midi_loader (仅被 lib.rs initialize 调用)
+└── params (YueliangParams)
 ```
-
----
-
-## 实时音频红线
-
-在 `pipeline.rs`、`synth.rs`、`midi_player.rs` 的 `process` 路径上：
-- **禁止** `Vec::push()` / `String` 等堆分配
-- **禁止** `Mutex` / `RwLock`
-- `pipeline.rs` 使用 `Vec::resize()` 操作预分配缓冲区（容量足够时不触发新分配）

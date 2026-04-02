@@ -56,7 +56,7 @@ impl Default for YueliangParams {
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
             max_voices: IntParam::new("Max Voices", 1000, IntRange::Linear { min: 1, max: 100000 }),
-            velocity_threshold: IntParam::new("Velocity Threshold", 0, IntRange::Linear { min: 0, max: 127 }),
+            velocity_threshold: IntParam::new("Velocity Threshold", 1, IntRange::Linear { min: 0, max: 127 }),
             force_max_velocity: BoolParam::new("Force Max Velocity", false),
             interpolation: EnumParam::new("Interpolation", InterpolationMode::Linear),
             enable_limiter: BoolParam::new("Enable Limiter", true),

@@ -1,6 +1,6 @@
 # Yueliang 项目状态
 
-最后更新：2026-04-02-10-56-42  
+最后更新：2026-04-02-14-24-11
 当前版本：v0.0.1
 
 ---
@@ -15,7 +15,7 @@
 
 ## 当前阶段
 
-**阶段 4：内部走带同步与预过滤** 🟡 进行中
+**阶段 4：内部走带同步与预过滤** ✅ 已完成
 
 ### 阶段 1 已完成 ✅
 
@@ -71,13 +71,22 @@
 
 **调试技巧**：使用文件日志（`/tmp/yueliang_debug.log`）比控制台日志更可靠。详见 `docs/notes/debugging-techniques.md`
 
-### 阶段 4 进行中
+### 阶段 4 已完成 ✅
 
 - [x] 搭建 `MidiPlayer` / `Pipeline` / `MidiMapper` 子模块框架
-- [x] 实现力度过滤（`apply_filter`）逻辑框架
-- [ ] MIDI 文件加载（midly）
-- [ ] 基于走带位置的 MIDI 事件调度（`transport.pos_samples()`）
-- [ ] 预过滤与批量发送优化生效
+- [x] 实现力度过滤（`midi_filter::apply_filter`）逻辑
+- [x] MIDI 文件加载（`midly`）并解析为 `Vec<MidiEvent>`
+- [x] 基于 DAW 走带位置的 MIDI 事件调度（tick → DAW beat 转换）
+- [x] DAW BPM 驱动 MIDI 播放（忽略原 MIDI Tempo）
+- [x] 走带停止时全通道 `AllNotesOff` 静音
+- [x] Scrub / 播放头跳转检测与 `event_index` 快速重置
+- [x] 预过滤与批量发送优化生效
+
+### 阶段 4 关键决策
+
+**Tick-based 事件存储**：用 `tick` 代替 `sample_offset`，使 MIDI 播放速度完全由 DAW BPM 控制，同时天然支持播放头跳转。详见 `docs/decisions/tick-based-event-storage.md`
+
+**解析与调度分离**：`data::midi_loader` 负责非实时文件解析，`engine::midi_player` 负责实时调度，确保音频线程零分配。详见 `docs/decisions/midi-loader-separation.md`
 
 ---
 
@@ -88,18 +97,22 @@
 | 阶段 1 | 基础脚手架与参数打通 | ✅ 完成 |
 | 阶段 2 | XSynth 引擎集成与音频通路验证 | ✅ 完成 |
 | 阶段 3 | 启用 XSynth 引擎（音色+MIDI）+ 代码拆分 | ✅ 完成 |
-| 阶段 4 | 内部走带同步与预过滤 | 🟡 进行中 |
+| 阶段 4 | 内部走带同步与预过滤 | ✅ 完成 |
 | 阶段 5 | Egui UI 与动态路由 | ⬜ 未开始 |
 
 ---
 
-## P0 优先任务（阶段 4）
+## P0 优先任务（阶段 5）
 
-1. MIDI 文件加载与解析（`midly`）
-2. 基于走带位置的 MIDI 事件调度（tick → sample_offset 转换）
-3. 让 `velocity_threshold` 和 `force_max_velocity` 在 `midi_player.process()` 中真正生效
+1. Egui UI 基础框架搭建
+2. 文件选择器（MIDI、SF2）
+3. 路由矩阵（MIDI 通道 → VST 输出）
+4. 参数可视化（当前 voice 数、过滤统计）
+
+---
 
 ## P1 任务
 
-1. `pipeline.rs` 缓冲区零分配优化（固定大小 ring buffer）
-2. 多端口 MIDI 映射方案实现（参考 `docs/architecture/port-mapping.md`）
+1. 多总线音频输出（为后续路由做准备）
+2. 性能基准测试（Black MIDI Stress Test）
+3. 预分配环形缓冲区替代 `Vec::resize`

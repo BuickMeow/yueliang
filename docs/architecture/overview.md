@@ -100,7 +100,7 @@
 
 ### 为什么不用 xsynth-realtime?
 
-xsynth-realtime 使用 CPAL 等物理声卡后端，适合独立应用程序。  
+xsynth-realtime 使用 CPAL 等物理声卡后端，适合独立应用程序。
 Yueliang 作为 VST 插件，音频输出由 DAW 控制，直接在 `process()` 中渲染即可。
 
 ### 为什么 MIDI_INPUT = None?
@@ -117,3 +117,13 @@ Yueliang 作为 VST 插件，音频输出由 DAW 控制，直接在 `process()` 
 - `midi_player` 专注于时间线与事件过滤
 - `pipeline` 专注于音频格式转换与参数应用
 - 两者解耦，便于独立测试和后续优化
+
+### 为什么 MIDI 事件使用 tick 而非 sample_offset?
+
+`sample_offset` 把 BPM 信息固化在数据里，而 `tick` 是速度无关的音乐时间单位。
+使用 `tick` 后，`midi_player` 可以在音频线程中根据 DAW 的实时 `transport.tempo` 和 `transport.pos_beats()` 动态计算当前应该触发的事件，完美支持 BPM 变化和 scrub 操作。详见 `docs/decisions/tick-based-event-storage.md`。
+
+### 为什么把 MIDI 解析与实时调度分离?
+
+`midly` 解析涉及文件 IO 和大量堆分配，严禁在音频线程执行。
+将解析逻辑放入 `data::midi_loader`，`engine::midi_player` 只接收已解析的 `Vec<MidiEvent>`，确保 `process()` 中零分配、零 IO。详见 `docs/decisions/midi-loader-separation.md`。
