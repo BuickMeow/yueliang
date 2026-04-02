@@ -53,7 +53,7 @@ impl Default for YueliangParams {
 
             gain: FloatParam::new(
                 "Gain",
-                0.0,    // 0dB
+                1.0,    // 0dB
                 FloatRange::Linear {
                     min: 0.0,   // -inf dB
                     max: 2.0,   // 大约+6dB
@@ -143,12 +143,43 @@ impl Plugin for Yueliang {
         let max_voices = self.params.max_voices.value() as usize;
         let sample_rate = buffer_config.sample_rate;
 
+        nih_log!("Time to load a soundfont");
+
         // 创建引擎
         //self.engine = Some(engine::SynthEngine::new(sample_rate, max_voices));
-
-        self.test_tone = Some(engine::TestToneGenerator::new(440.0, buffer_config.sample_rate));
-
+        //self.test_tone = Some(engine::TestToneGenerator::new(440.0, buffer_config.sample_rate));
         // TODO: 加载默认音色库
+
+        // 创建XSynth引擎
+        let mut engine = engine::SynthEngine::new(sample_rate, max_voices);
+
+        // 加载音色库
+        let soundfont_path = "/Users/jieneng/Documents/GitHub/yueliang/assets/GeneralUser-GS.sf2";
+        match engine.load_soundfont(soundfont_path) {
+            Ok(()) => {
+                nih_log!("SoundFont loaded successfully: {}", soundfont_path);
+            }
+            Err(e) => {
+                nih_log!("Warning: Failed to load SoundFont: {}", e);   //此时可继续运行，但无声
+            }
+        }
+
+        // 发送测试音符（临时测试用）喵喵喵喵喵喵喵
+        /*if let Some(ref mut engine) = self.engine {
+            if engine.is_soundfont_loaded() {
+                engine.send_test_note();
+                nih_log!("Test note sent!");
+            }
+        }*/
+
+        // 发送测试音符（使用局部变量 engine）
+        /*if engine.is_soundfont_loaded() {
+            engine.send_test_note();
+        }*/
+
+
+        
+        self.engine = Some(engine);
 
         true
         // 因为完成度不高（或者说哪都还没开始），所以现阶段写TODO会比较少
@@ -172,7 +203,7 @@ impl Plugin for Yueliang {
             //let gain_db = self.params.gain.value();
             let gain = util::db_to_gain(gain_db);
 
-            /*if let Some(ref mut engine) = self.engine {
+            if let Some(ref mut engine) = self.engine {
                 let num_frames = buffer.samples(); 
                 // 准备左右声道缓冲区
                 let mut left = vec![0.0f32; num_frames];
@@ -180,6 +211,8 @@ impl Plugin for Yueliang {
 
                 // 渲染音频
                 engine.render(&mut left, &mut right, num_frames);
+
+                engine.send_test_note(); 
 
                 // 写入DAW缓冲区并应用gain
                 for (i, mut channel_samples) in buffer.iter_samples().enumerate() {
@@ -191,10 +224,10 @@ impl Plugin for Yueliang {
                     *iter.next().unwrap() = l;
                     *iter.next().unwrap() = r;
                 }
-            }*/
+            }
 
             // 只是用来播放正弦波
-            if let Some(ref mut tone) = self.test_tone {
+            /*if let Some(ref mut tone) = self.test_tone {
                 let num_frames = buffer.samples(); 
                 // 准备左右声道缓冲区
                 let mut left = vec![0.0f32; num_frames];
@@ -215,7 +248,7 @@ impl Plugin for Yueliang {
                     *iter.next().unwrap() = l;
                     *iter.next().unwrap() = r;
                 }
-            }
+            }*/
 
             //let _transport = context.transport();
 

@@ -66,5 +66,9 @@ PLIST
     echo -e "${GREEN}✅ Info.plist 创建完成${NC}"
 fi
 
+echo "🔐 签名插件..."
+codesign --force --sign - --deep "$VST3_DIR/$PLUGIN_NAME.vst3"
+echo "✅ 签名完成"
+
 echo -e "${GREEN}🎉 部署完成！请在 DAW 中重新扫描插件。${NC}"
 echo -e "${YELLOW}💡 提示: 在 DAW 中执行 'Reset Plugin Catalog' 或 'Scan Now'${NC}"

@@ -1,15 +1,20 @@
 use xsynth_core::{
     AudioPipe, AudioStreamParams, channel::{
-        ChannelAudioEvent,
-        ChannelEvent,
+        ChannelAudioEvent, ChannelEvent, ChannelConfigEvent
     }, channel_group::{
         ChannelGroup, ChannelGroupConfig, ParallelismOptions, SynthEvent, SynthFormat
+    }, soundfont::{
+        SampleSoundfont, SoundfontInitOptions
     }
 };
+use std::sync::Arc;
+use nih_plug::prelude::nih_log;
+
 pub struct SynthEngine {
     core: ChannelGroup,
     sample_rate: f32,
     max_voices: usize,  // 用于监控性能
+    soundfont_loaded: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -54,12 +59,42 @@ impl SynthEngine {
             core,
             sample_rate,
             max_voices: _max_voices,
+            soundfont_loaded: false,
         }
     }
 
-    pub fn load_soundfont(&mut self, _path: &str) -> Result<(), String> {
-        // 我想写外置的音色库加载器，不想用内置的，初期方案详见/docs/external/copilot-soundfont-loading.md，这是Copilot网页版根据XSynth库生成的
+    /// 加载 SoundFont 音色库
+    /// 
+    /// # Arguments
+    /// * `path` - SF2 文件路径
+    /// 
+    /// # Returns
+    /// * `Ok(())` - 加载成功
+    /// * `Err(String)` - 加载失败原因
+    pub fn load_soundfont(&mut self, path: &str) -> Result<(), String> {
+        // 远期需要编写外置音色库加载，但是现阶段需要用XSynth原生音色库加载。
+        // 1. 使用 XSynth 的 SampleSoundfont 加载 SF2
+        let soundfont = match SampleSoundfont::new(
+            path, 
+            //Default::default(), 
+            self.core.stream_params().clone(),
+            SoundfontInitOptions::default(),
+        ) {
+            Ok(sf) => Arc::new(sf) as Arc<dyn xsynth_core::soundfont::SoundfontBase>,
+            Err(e) => return Err(format!("Failed to load SoundFont: {:?}", e)),
+        };
+
+        self.core.send_event(SynthEvent::AllChannels(
+            ChannelEvent::Config(ChannelConfigEvent::SetSoundfonts(vec![soundfont]))
+        ));
+
+        self.soundfont_loaded = true;
         Ok(())
+    }
+
+    /// 检查音色是否已加载
+    pub fn is_soundfont_loaded(&self) -> bool {
+        self.soundfont_loaded
     }
 
     /// 发送 MIDI 事件到引擎
@@ -139,6 +174,37 @@ impl SynthEngine {
     pub fn sample_rate(&self) -> f32 {
         self.sample_rate
     }
+
+    /// 这里是纯AI写的
+    /// 发送测试音符（C4，力度 100）
+    /// 用于验证 XSynth 是否能正常发声
+    pub fn send_test_note(&mut self) {
+        self.send_midi(MidiEvent {
+            sample_offset: 0,
+            channel: 0,
+            message: MidiMessage::ProgramChange { pc: 0 },  // 选择钢琴
+        });
+        // Note On
+        self.send_midi(MidiEvent {
+            sample_offset: 0,
+            channel: 0,
+            message: MidiMessage::NoteOn { key: 60, velocity: 100 },
+        });
+        
+        nih_log!("Test note sent: C4 (key=60, vel=100)");
+    }
+
+    /// 停止测试音符
+    pub fn stop_test_note(&mut self) {
+        self.send_midi(MidiEvent {
+            sample_offset: 0,
+            channel: 0,
+            message: MidiMessage::NoteOff { key: 60 },
+        });
+    }
+
+
+
 }
 
 /// 简单的测试：生成正弦波（不需要 SoundFont）
