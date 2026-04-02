@@ -1,7 +1,8 @@
 pub mod synth;
+pub mod pipeline;
 pub mod midi_player;
 pub mod midi_mapper;
-pub mod pipeline;
+pub mod midi_filter;
 
 pub use synth::SynthEngine;
 pub use midi_player::MidiPlayer;

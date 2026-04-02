@@ -124,6 +124,15 @@ impl Plugin for Yueliang {
             Err(e) => nih_log!("Warning: Failed to load SoundFont: {}", e),
         }
 
+        let midi_path = "/Users/jieneng/Documents/GitHub/yueliang/assets/Act Beloved.mid";
+        match crate::data::midi_loader::load_from_file(midi_path) {
+            Ok(loaded) => {
+                nih_log!("MIDI ready: {} events", loaded.events.len());
+                self.midi_player.load(loaded.events, loaded.ppqn);
+            }
+            Err(e) => nih_log!("Warning: Failed to load MIDI: {}", e),
+        }
+
         self.engine = Some(engine);
         true
     }
@@ -143,7 +152,8 @@ impl Plugin for Yueliang {
     ) -> ProcessStatus {
         if let Some(ref mut engine) = self.engine {
             let transport = context.transport();
-            self.midi_player.process(transport, engine, &self.params);
+            let num_frames = buffer.samples();
+            self.midi_player.process(transport, engine, &self.params, num_frames);
             self.pipeline.render(buffer, engine, &self.params);
         }
 

@@ -1,3 +1,5 @@
+pub const NUM_CHANNELS: u32 = 64;
+
 use xsynth_core::{
     AudioPipe, AudioStreamParams, channel::{
         ChannelAudioEvent, ChannelEvent, ChannelConfigEvent
@@ -27,7 +29,7 @@ impl SynthEngine {
 
         let config = ChannelGroupConfig {
             channel_init_options: Default::default(),
-            format: SynthFormat::Custom { channels: 64 },
+            format: SynthFormat::Custom { channels: NUM_CHANNELS },
             audio_params,
             parallelism: ParallelismOptions::default(),
         };
@@ -81,7 +83,7 @@ impl SynthEngine {
     }
 
     pub fn reset(&mut self) {
-        for ch in 0..16 {
+        for ch in 0..NUM_CHANNELS {
             self.core.send_event(SynthEvent::Channel(
                 ch,
                 ChannelEvent::Audio(ChannelAudioEvent::AllNotesOff),
@@ -97,7 +99,7 @@ impl SynthEngine {
         self.sample_rate
     }
 
-    pub fn send_test_note(&mut self) {
+    /*pub fn send_test_note(&mut self) {
         self.core.send_event(SynthEvent::Channel(
             0,
             ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(0)),
@@ -107,14 +109,14 @@ impl SynthEngine {
             ChannelEvent::Audio(ChannelAudioEvent::NoteOn { key: 60, vel: 100 }),
         ));
         nih_log!("Test note sent: C4 (key=60, vel=100)");
-    }
+    }*/
 
-    pub fn stop_test_note(&mut self) {
+    /*pub fn stop_test_note(&mut self) {
         self.core.send_event(SynthEvent::Channel(
             0,
             ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key: 60 }),
         ));
-    }
+    }*/
 
     pub fn read_samples(&mut self, buffer: &mut [f32]) {
         self.core.read_samples(buffer);

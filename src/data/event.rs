@@ -1,7 +1,7 @@
 #[derive(Clone, Debug)]
 pub struct MidiEvent {
-    pub sample_offset: usize,
-    pub channel: u8,
+    pub tick: u64, 
+    pub channel: u8,    // 此处通道不带端口
     pub message: MidiMessage,
 }
 
