@@ -1,4 +1,2 @@
-#[derive(Debug, Clone)]
-pub struct MidiEvent {
-    // 一会写
-}
+pub mod event;
+pub use event::{MidiEvent, MidiMessage};
