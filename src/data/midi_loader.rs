@@ -40,6 +40,20 @@ pub fn load_from_file(path: &str) -> Result<LoadedMidi, String> {
                     MidlyMidiMessage::NoteOff { key, .. } => {
                         MidiMessage::NoteOff { key: key.as_int() }
                     }
+                    MidlyMidiMessage::ProgramChange { program } => {
+                        MidiMessage::ProgramChange { pc: program.as_int() }
+                    }
+                    MidlyMidiMessage::Controller { controller, value } => {
+                        MidiMessage::ControlChange { 
+                            cc: controller.as_int(), 
+                            value: value.as_int() 
+                        }
+                    }
+                    MidlyMidiMessage::PitchBend { bend } => {
+                        MidiMessage::PitchBend { 
+                            value: bend.as_int() as i16, 
+                        }
+                    }
                     _ => continue,
                 };
                 events.push(MidiEvent {

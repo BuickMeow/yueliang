@@ -1,5 +1,5 @@
 use crate::data::event::{MidiEvent, MidiMessage};
-use xsynth_core::channel::{ChannelAudioEvent, ChannelEvent};
+use xsynth_core::channel::{ChannelAudioEvent, ChannelEvent, ControlEvent};
 use xsynth_core::channel_group::SynthEvent;
 
 pub fn map_midi_event(event: &MidiEvent) -> Option<SynthEvent> {
@@ -14,12 +14,15 @@ pub fn map_midi_event(event: &MidiEvent) -> Option<SynthEvent> {
             ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(*pc))
         }
         MidiMessage::ControlChange { cc, value } => {
-            // TODO: 映射到 XSynth ControlEvent
-            return None;
+            ChannelEvent::Audio(ChannelAudioEvent::Control(
+                ControlEvent::Raw(*cc, *value)
+            ))
         }
         MidiMessage::PitchBend { value } => {
-            // TODO: 映射到 XSynth PitchBend
-            return None;
+            let normalized = (*value as f32 - 8192.0) / 8192.0;
+            ChannelEvent::Audio(ChannelAudioEvent::Control(
+                ControlEvent::PitchBendValue(normalized.clamp(-1.0, 1.0))
+            ))
         }
     };
     
