@@ -91,6 +91,24 @@ impl SynthEngine {
         }
     }
 
+    pub fn all_notes_off(&mut self) {
+        for ch in 0..NUM_CHANNELS {
+            self.core.send_event(SynthEvent::Channel(
+                ch as u32,
+                ChannelEvent::Audio(ChannelAudioEvent::AllNotesOff),
+            ));
+        }
+    }
+
+    pub fn all_notes_killed(&mut self) {
+        for ch in 0..NUM_CHANNELS {
+            self.core.send_event(SynthEvent::Channel(
+                ch as u32,
+                ChannelEvent::Audio(ChannelAudioEvent::AllNotesKilled),
+            ));
+        }
+    }
+
     pub fn active_voices(&self) -> u64 {
         self.core.voice_count()
     }

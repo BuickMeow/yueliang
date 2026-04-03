@@ -1,6 +1,6 @@
 # Yueliang 项目状态
 
-最后更新：2026-04-02-14-24-11
+最后更新：2026-04-03-15-55-09
 当前版本：v0.0.1
 
 ---
@@ -15,7 +15,7 @@
 
 ## 当前阶段
 
-**阶段 4：内部走带同步与预过滤** ✅ 已完成
+**阶段 5：Egui UI 与文件持久化** 🟡 进行中 / 核心功能已完成
 
 ### 阶段 1 已完成 ✅
 
@@ -65,7 +65,7 @@
 
 ### 阶段 3 关键决策与踩坑
 
-**SoundFont 路径问题**：VST3 插件运行时使用绝对路径加载 SF2 文件，相对路径因工作目录不同而失效。
+**SoundFont 路径问题**：VST3 插件运行时使用绝对路径加载 SF2/SFZ 文件，相对路径因工作目录不同而失效。
 
 **MIDI 事件时机**：NoteOn 在 `initialize()` 只触发一次，实际使用时需要根据 DAW 走带位置持续发送。
 
@@ -73,20 +73,37 @@
 
 ### 阶段 4 已完成 ✅
 
-- [x] 搭建 `MidiPlayer` / `Pipeline` / `MidiMapper` 子模块框架
+- [x] 搭建 `MidiPlayer` / `Pipeline` / `MidiMapper` / `MidiFilter` 子模块框架
 - [x] 实现力度过滤（`midi_filter::apply_filter`）逻辑
 - [x] MIDI 文件加载（`midly`）并解析为 `Vec<MidiEvent>`
 - [x] 基于 DAW 走带位置的 MIDI 事件调度（tick → DAW beat 转换）
 - [x] DAW BPM 驱动 MIDI 播放（忽略原 MIDI Tempo）
-- [x] 走带停止时全通道 `AllNotesOff` 静音
 - [x] Scrub / 播放头跳转检测与 `event_index` 快速重置
 - [x] 预过滤与批量发送优化生效
+- [x] CC / PitchBend / ProgramChange 完整映射并修复 PitchBend 公式 bug
+- [x] 走带暂停时 `AllNotesOff`，恢复播放前 `AllNotesKilled` 切断残留
 
 ### 阶段 4 关键决策
 
 **Tick-based 事件存储**：用 `tick` 代替 `sample_offset`，使 MIDI 播放速度完全由 DAW BPM 控制，同时天然支持播放头跳转。详见 `docs/decisions/tick-based-event-storage.md`
 
 **解析与调度分离**：`data::midi_loader` 负责非实时文件解析，`engine::midi_player` 负责实时调度，确保音频线程零分配。详见 `docs/decisions/midi-loader-separation.md`
+
+### 阶段 5 进行中 🟡
+
+- [x] Egui UI 基础框架（`editor.rs`）
+- [x] 文件选择器（MIDI `.mid`、SoundFont `.sf2`/`.sfz`）
+- [x] `rfd::AsyncFileDialog` 集成（修复 macOS 同步对话框崩溃）
+- [x] 路径持久化（DAW 保存/打开工程时自动恢复用户选择的文件）
+- [x] 去掉默认硬编码音色库与 MIDI 引用
+- [ ] 路由矩阵（MIDI 通道 → VST 输出总线）
+- [ ] 参数可视化（当前 voice 数、过滤统计）
+
+### 阶段 5 关键决策与踩坑
+
+**macOS 文件选择器崩溃**：在 egui UI 线程直接使用 `rfd::FileDialog::pick_file()`（同步版）会与 `baseview` 事件循环冲突，导致 `SIGABRT`。改为 `rfd::AsyncFileDialog` + 子线程 `simple_block_on` 解决。详见 `docs/knowledge/nih-plug-egui-integration.md`
+
+**路径持久化**：使用 `#[persist = "..."]` + `Arc<parking_lot::Mutex<String>>` 存储用户选择的路径，DAW 自动保存/恢复，采样率变更时 `initialize()` 也能重新加载。
 
 ---
 
@@ -98,21 +115,20 @@
 | 阶段 2 | XSynth 引擎集成与音频通路验证 | ✅ 完成 |
 | 阶段 3 | 启用 XSynth 引擎（音色+MIDI）+ 代码拆分 | ✅ 完成 |
 | 阶段 4 | 内部走带同步与预过滤 | ✅ 完成 |
-| 阶段 5 | Egui UI 与动态路由 | ⬜ 未开始 |
+| 阶段 5 | Egui UI 与动态路由 | 🟡 核心完成，路由矩阵待做 |
 
 ---
 
-## P0 优先任务（阶段 5）
+## P0 优先任务
 
-1. Egui UI 基础框架搭建
-2. 文件选择器（MIDI、SF2）
-3. 路由矩阵（MIDI 通道 → VST 输出）
-4. 参数可视化（当前 voice 数、过滤统计）
+1. 多总线音频输出与路由矩阵
+2. 性能基准测试（Black MIDI Stress Test）
+3. 预分配环形缓冲区替代 `Vec::resize`
 
 ---
 
 ## P1 任务
 
-1. 多总线音频输出（为后续路由做准备）
-2. 性能基准测试（Black MIDI Stress Test）
-3. 预分配环形缓冲区替代 `Vec::resize`
+1. UI 参数可视化（voice 计数、MIDI 过滤统计）
+2. 支持更多 MIDI Meta Event（如 Marker、Lyric 的显示/忽略策略）
+3. 发布第一个公开测试版

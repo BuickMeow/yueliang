@@ -1,10 +1,12 @@
 use nih_plug::prelude::*;
 use nih_plug_egui::EguiState;
 use std::sync::Arc;
+use parking_lot::Mutex;
 
 mod engine;
 mod data;
 mod utils;
+mod editor;
 
 #[derive(Enum, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum InterpolationMode {
@@ -22,6 +24,12 @@ impl Default for InterpolationMode {
 pub struct YueliangParams {
     #[persist = "editor_state"]
     pub editor_state: Arc<EguiState>,
+
+    #[persist = "soundfont_path"]
+    pub soundfont_path: Arc<parking_lot::Mutex<String>>,
+
+    #[persist = "midi_path"]
+    pub midi_path: Arc<parking_lot::Mutex<String>>,
 
     #[id = "gain"]
     pub gain: FloatParam,
@@ -46,6 +54,8 @@ impl Default for YueliangParams {
     fn default() -> Self {
         Self {
             editor_state: EguiState::from_size(800, 600),
+            soundfont_path: Arc::new(parking_lot::Mutex::new(String::new())),
+            midi_path: Arc::new(parking_lot::Mutex::new(String::new())),
             gain: FloatParam::new(
                 "Gain",
                 1.0,
@@ -66,18 +76,18 @@ impl Default for YueliangParams {
 
 pub struct Yueliang {
     params: Arc<YueliangParams>,
-    engine: Option<engine::SynthEngine>,
+    engine: Arc<Mutex<Option<engine::SynthEngine>>>,
     pipeline: engine::Pipeline,
-    midi_player: engine::MidiPlayer,
+    midi_player: Arc<Mutex<engine::MidiPlayer>>,  
 }
 
 impl Default for Yueliang {
     fn default() -> Self {
         Self {
             params: Arc::new(YueliangParams::default()),
-            engine: None,
+            engine: Arc::new(Mutex::new(None)),
             pipeline: engine::Pipeline::new(),
-            midi_player: engine::MidiPlayer::new(),
+            midi_player: Arc::new(Mutex::new(engine::MidiPlayer::new())), 
         }
     }
 }
@@ -115,33 +125,35 @@ impl Plugin for Yueliang {
     ) -> bool {
         let max_voices = self.params.max_voices.value() as usize;
         let sample_rate = buffer_config.sample_rate;
-
         let mut engine = engine::SynthEngine::new(sample_rate, max_voices);
 
-        let soundfont_path = "/Users/jieneng/Documents/GitHub/yueliang/assets/GeneralUser-GS.sf2";
-        match engine.load_soundfont(soundfont_path) {
-            Ok(()) => nih_log!("SoundFont loaded successfully: {}", soundfont_path),
-            Err(e) => nih_log!("Warning: Failed to load SoundFont: {}", e),
-        }
-
-        let midi_path = "/Users/jieneng/Documents/GitHub/yueliang/assets/Act Beloved.mid";
-        match crate::data::midi_loader::load_from_file(midi_path) {
-            Ok(loaded) => {
-                nih_log!("MIDI ready: {} events", loaded.events.len());
-                self.midi_player.load(loaded.events, loaded.ppqn);
+        // ---- SoundFont ----
+        let sf_saved = self.params.soundfont_path.lock().clone();
+        if !sf_saved.is_empty() {
+            match engine.load_soundfont(&sf_saved) {
+                Ok(()) => nih_log!("SoundFont loaded: {}", sf_saved),
+                Err(e) => nih_log!("Warning: {}", e),
             }
-            Err(e) => nih_log!("Warning: Failed to load MIDI: {}", e),
         }
 
-        self.engine = Some(engine);
+        // ---- MIDI ----
+        let midi_saved = self.params.midi_path.lock().clone();
+        if !midi_saved.is_empty() {
+            if let Ok(loaded) = crate::data::midi_loader::load_from_file(&midi_saved) {
+                nih_log!("MIDI ready: {} events", loaded.events.len());
+                self.midi_player.lock().load(loaded.events, loaded.ppqn);
+            }
+        }
+
+        *self.engine.lock() = Some(engine);
         true
     }
 
     fn reset(&mut self) {
-        if let Some(ref mut engine) = self.engine {
-            engine.reset();
+        if let Some(ref mut engine) = self.engine.lock().as_mut() {
+            engine.all_notes_killed();
         }
-        self.midi_player.reset();
+        self.midi_player.lock().reset();
     }
 
     fn process(
@@ -150,10 +162,13 @@ impl Plugin for Yueliang {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        if let Some(ref mut engine) = self.engine {
+        let mut engine_guard = self.engine.lock();
+        let mut midi_player = self.midi_player.lock();
+
+        if let Some(ref mut engine) = engine_guard.as_mut() {
             let transport = context.transport();
             let num_frames = buffer.samples();
-            self.midi_player.process(transport, engine, &self.params, num_frames);
+            midi_player.process(transport, engine, &self.params, num_frames);
             self.pipeline.render(buffer, engine, &self.params);
         }
 
@@ -161,7 +176,11 @@ impl Plugin for Yueliang {
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        None
+        editor::create(
+            self.params.clone(),
+            self.engine.clone(),
+            self.midi_player.clone(),
+        )
     }
 }
 

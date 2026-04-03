@@ -19,11 +19,12 @@ pub fn map_midi_event(event: &MidiEvent) -> Option<SynthEvent> {
             ))
         }
         MidiMessage::PitchBend { value } => {
-            let normalized = (*value as f32 - 8192.0) / 8192.0;
+            let normalized = *value as f32 / 8192.0;
             ChannelEvent::Audio(ChannelAudioEvent::Control(
                 ControlEvent::PitchBendValue(normalized.clamp(-1.0, 1.0))
             ))
         }
+        // 有关RPN的内容，可通过XSynth直接自行处理
     };
     
     Some(SynthEvent::Channel(event.channel as u32, channel_event))
