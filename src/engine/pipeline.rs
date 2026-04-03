@@ -14,11 +14,17 @@ impl Pipeline {
         }
     }
 
+    pub fn with_capacity(max_frames: usize) -> Self {
+        Self {
+            interleaved: vec![0.0f32; max_frames * 2],
+        }
+    }
+
     pub fn render(&mut self, buffer: &mut Buffer, engine: &mut SynthEngine, params: &YueliangParams) {
         let num_frames = buffer.samples();
-        self.interleaved.resize(num_frames * 2, 0.0);
+        let slice = &mut self.interleaved[..num_frames * 2];
 
-        engine.read_samples(&mut self.interleaved);
+        engine.read_samples(slice);
         let gain_db = params.gain.smoothed.next();
         let gain = util::db_to_gain(gain_db);
 

@@ -31,7 +31,7 @@ impl SynthEngine {
             channel_init_options: Default::default(),
             format: SynthFormat::Custom { channels: NUM_CHANNELS },
             audio_params,
-            parallelism: ParallelismOptions::default(),
+            parallelism: ParallelismOptions::AUTO_PER_CHANNEL,
         };
 
         let core = ChannelGroup::new(config);

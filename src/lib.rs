@@ -146,6 +146,11 @@ impl Plugin for Yueliang {
         }
 
         *self.engine.lock() = Some(engine);
+
+        // Pipeline预分配
+        let max_frames = buffer_config.max_buffer_size as usize;
+        self.pipeline = engine::Pipeline::with_capacity(max_frames);
+
         true
     }
 

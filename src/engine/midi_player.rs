@@ -1,7 +1,128 @@
 use nih_plug::prelude::*;
 use crate::engine::{SynthEngine, midi_mapper, midi_filter};
-use crate::data::event::MidiEvent;
+use crate::data::event::{MidiEvent, MidiMessage};
 use crate::YueliangParams;
+
+
+struct StateTable {
+    // [channel][cc_number] -> Vec<(tick, value)>
+    cc: Vec<Vec<Vec<(u64, u8)>>>,
+    pc: Vec<Vec<(u64, u8)>>,
+    pb: Vec<Vec<(u64, i16)>>,
+}
+
+impl StateTable {
+    fn new() -> Self {
+        let channels = crate::engine::NUM_CHANNELS as usize;
+        Self {
+            cc: vec![vec![Vec::new(); 128]; channels],
+            pc: vec![Vec::new(); channels],
+            pb: vec![Vec::new(); channels],
+        }
+    }
+
+    fn build(&mut self, events: &[MidiEvent]) {
+        // 清空旧数据
+        for ch in &mut self.cc {
+            for vec in ch {
+                vec.clear();
+            }
+        }
+        for ch in &mut self.pc {
+            ch.clear();
+        }
+        for ch in &mut self.pb {
+            ch.clear();
+        }
+
+        let max_ch = self.cc.len() as u8;
+        for e in events {
+            if e.channel >= max_ch {
+                continue;
+            }
+            let ch = e.channel as usize;
+            match e.message {
+                MidiMessage::ControlChange { cc, value } => {
+                    self.cc[ch][cc as usize].push((e.tick, value));
+                }
+                MidiMessage::ProgramChange { pc } => {
+                    self.pc[ch].push((e.tick, pc));
+                }
+                MidiMessage::PitchBend { value } => {
+                    self.pb[ch].push((e.tick, value));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn snapshot_at(&self, tick: u64) -> Vec<MidiEvent> {
+        let mut out = Vec::new();
+
+        for ch in 0..self.cc.len() {
+            // 1. 先收集所有需要注入的 CC
+            let mut cc_events: Vec<(u8, u8)> = Vec::new();
+            for cc_num in 0..128 {
+                let events = &self.cc[ch][cc_num];
+                if events.is_empty() { continue; }
+                let idx = events.partition_point(|(t, _)| *t < tick);
+                if idx > 0 {
+                    if let Some(&(_, value)) = events.get(idx - 1) {
+                        cc_events.push((cc_num as u8, value));
+                    }
+                }
+            }
+
+            // 2. 按 RPN 设置顺序排序：101, 100, 其他, 6, 38
+            cc_events.sort_by_key(|(cc, _)| match *cc {
+                101 => 0,
+                100 => 1,
+                99 => 2,
+                98 => 3,
+                6 => 4,
+                38 => 5,
+                _ => 100,
+            });
+
+            for (cc, value) in cc_events {
+                out.push(MidiEvent {
+                    tick,
+                    channel: ch as u8,
+                    message: MidiMessage::ControlChange { cc, value },
+                });
+            }
+
+            if !self.pc[ch].is_empty() {
+                let idx = self.pc[ch].partition_point(|(t, _)| *t < tick);
+                if idx > 0 {
+                    if let Some(&(_, pc)) = self.pc[ch].get(idx - 1) {
+                        out.push(MidiEvent {
+                            tick,
+                            channel: ch as u8,
+                            message: MidiMessage::ProgramChange { pc },
+                        });
+                    }
+                }
+            }
+
+            if !self.pb[ch].is_empty() {
+                let idx = self.pb[ch].partition_point(|(t, _)| *t < tick);
+                if idx > 0 {
+                    if let Some(&(_, value)) = self.pb[ch].get(idx - 1) {
+                        out.push(MidiEvent {
+                            tick,
+                            channel: ch as u8,
+                            message: MidiMessage::PitchBend { value },
+                        });
+                    }
+                }
+            }
+        }
+
+        out
+    }
+}
+
 
 pub struct MidiPlayer {
     events: Vec<MidiEvent>,
@@ -9,6 +130,7 @@ pub struct MidiPlayer {
     event_index: usize,
     was_playing: bool,
     last_tick: f64,
+    state_table: StateTable,
 }
 
 impl MidiPlayer {
@@ -19,11 +141,13 @@ impl MidiPlayer {
             event_index: 0,
             was_playing: false,
             last_tick: 0.0,
+            state_table: StateTable::new(),
         }
     }
 
     /// 实时安全：只接收已解析好的数据，不碰文件系统
     pub fn load(&mut self, events: Vec<MidiEvent>, ppqn: u16) {
+        self.state_table.build(&events); 
         self.events = events;
         self.ppqn = ppqn;
         self.event_index = 0;
@@ -63,8 +187,16 @@ impl MidiPlayer {
         let end_tick = current_tick + tick_delta;
 
         // 播放头跳转检测（scrub / 循环 / 暂停后恢复）
-        if (current_tick - self.last_tick).abs() > self.ppqn as f64 {
+        if (current_tick - self.last_tick).abs() > 1.0 {
+            engine.all_notes_killed();  //可能会删
             self.event_index = self.find_event_index(current_tick);
+
+            // 注入跳转前的最新状态事件
+            for event in self.state_table.snapshot_at(current_tick as u64) {
+                if let Some(synth_event) = midi_mapper::map_midi_event(&event) {
+                    engine.send_event(synth_event);
+                }
+            }
         }
 
         // 分发本 buffer 内的事件
