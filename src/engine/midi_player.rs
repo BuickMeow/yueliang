@@ -187,7 +187,7 @@ impl MidiPlayer {
         let end_tick = current_tick + tick_delta;
 
         // 播放头跳转检测（scrub / 循环 / 暂停后恢复）
-        if (current_tick - self.last_tick).abs() > 1.0 {
+        if (current_tick - self.last_tick).abs() > self.ppqn as f64 * 0.5 {
             engine.all_notes_killed();  //可能会删
             self.event_index = self.find_event_index(current_tick);
 

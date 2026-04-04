@@ -82,7 +82,7 @@ pub fn create(
                     thread::spawn(move || {
                         let result = simple_block_on(
                             rfd::AsyncFileDialog::new()
-                                .add_filter("SoundFont", &["sf2, sfz"])
+                                .add_filter("SoundFont", &["sf2“, ”sfz"])
                                 .pick_file(),
                         );
                         if let Some(file) = result {

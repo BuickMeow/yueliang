@@ -1,4 +1,4 @@
-use midly::{Smf, TrackEventKind, MidiMessage as MidlyMidiMessage, Timing};
+use midly::{Smf, TrackEventKind, MidiMessage as MidlyMidiMessage, Timing, MetaMessage};
 use crate::data::event::{MidiEvent, MidiMessage};
 use nih_plug::prelude::nih_log;
 
@@ -23,46 +23,62 @@ pub fn load_from_file(path: &str) -> Result<LoadedMidi, String> {
 
     for track in &smf.tracks {
         let mut track_tick = 0u64;
+        let mut current_port: u8 = 0;
+
         for event in track {
             track_tick += event.delta.as_int() as u64;
-            if let TrackEventKind::Midi { channel, message } = event.kind {
-                let msg = match message {
-                    MidlyMidiMessage::NoteOn { key, vel } => {
-                        if vel.as_int() == 0 {
-                            MidiMessage::NoteOff { key: key.as_int() }
-                        } else {
-                            MidiMessage::NoteOn {
-                                key: key.as_int(),
-                                velocity: vel.as_int(),
+            match event.kind {
+                TrackEventKind::Meta(MetaMessage::MidiPort(port)) => {
+                    current_port = port.as_int();
+                }
+                TrackEventKind::Midi { channel, message } => {
+                    let mapped_channel = current_port
+                        .saturating_mul(16)
+                        .saturating_add(channel.as_int());
+
+                    if mapped_channel >= crate::engine::NUM_CHANNELS as u8 {
+                        continue;
+                    }
+
+                    let msg = match message {
+                        MidlyMidiMessage::NoteOn { key, vel } => {
+                            if vel.as_int() == 0 {
+                                MidiMessage::NoteOff { key: key.as_int() }
+                            } else {
+                                MidiMessage::NoteOn {
+                                    key: key.as_int(),
+                                    velocity: vel.as_int(),
+                                }
                             }
                         }
-                    }
-                    MidlyMidiMessage::NoteOff { key, .. } => {
-                        MidiMessage::NoteOff { key: key.as_int() }
-                    }
-                    MidlyMidiMessage::ProgramChange { program } => {
-                        MidiMessage::ProgramChange { pc: program.as_int() }
-                    }
-                    MidlyMidiMessage::Controller { controller, value } => {
-                        MidiMessage::ControlChange { 
-                            cc: controller.as_int(), 
-                            value: value.as_int() 
+                        MidlyMidiMessage::NoteOff { key, .. } => {
+                            MidiMessage::NoteOff { key: key.as_int() }
                         }
-                    }
-                    MidlyMidiMessage::PitchBend { bend } => {
-                        MidiMessage::PitchBend { 
-                            value: bend.as_int() as i16, 
+                        MidlyMidiMessage::ProgramChange { program } => {
+                            MidiMessage::ProgramChange { pc: program.as_int() }
                         }
-                    }
-                    _ => continue,
-                };
-                events.push(MidiEvent {
-                    tick: track_tick,
-                    channel: channel.as_int(),
-                    message: msg,
-                });
+                        MidlyMidiMessage::Controller { controller, value } => {
+                            MidiMessage::ControlChange { 
+                                cc: controller.as_int(), 
+                                value: value.as_int() 
+                            }
+                        }
+                        MidlyMidiMessage::PitchBend { bend } => {
+                            MidiMessage::PitchBend { 
+                                value: bend.as_int() as i16, 
+                            }
+                        }
+                        _ => continue,
+                    };
+
+                    events.push(MidiEvent {
+                        tick: track_tick,
+                        channel: mapped_channel,
+                        message: msg,
+                    });
+                }
+                _ => {}
             }
-            // 故意忽略 MetaMessage::Tempo，完全使用 DAW BPM
         }
     }
 
