@@ -3,6 +3,12 @@ use crate::engine::{SynthEngine, midi_mapper, midi_filter};
 use crate::data::event::{MidiEvent, MidiMessage};
 use crate::YueliangParams;
 
+const CC_RPN_MSB: u8 = 101;
+const CC_RPN_LSB: u8 = 100;
+const CC_NRPN_MSB: u8 = 99;
+const CC_NRPN_LSB: u8 = 98;
+const CC_DATA_ENTRY_MSB: u8 = 6;
+const CC_DATA_ENTRY_LSB: u8 = 38;
 
 struct StateTable {
     // [channel][cc_number] -> Vec<(tick, value)>
@@ -75,12 +81,12 @@ impl StateTable {
 
             // 2. 按 RPN 设置顺序排序：101, 100, 其他, 6, 38
             cc_events.sort_by_key(|(cc, _)| match *cc {
-                101 => 0,
-                100 => 1,
-                99 => 2,
-                98 => 3,
-                6 => 4,
-                38 => 5,
+                CC_RPN_MSB => 0,
+                CC_RPN_LSB => 1,
+                CC_NRPN_MSB => 2,
+                CC_NRPN_LSB => 3,
+                CC_DATA_ENTRY_MSB => 4,
+                CC_DATA_ENTRY_LSB => 5,
                 _ => 100,
             });
 

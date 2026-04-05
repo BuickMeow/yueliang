@@ -32,11 +32,12 @@ pub fn load_from_file(path: &str) -> Result<LoadedMidi, String> {
                     current_port = port.as_int();
                 }
                 TrackEventKind::Midi { channel, message } => {
-                    let mapped_channel = current_port
+                    let mapped_channel = (current_port as u16)
                         .saturating_mul(16)
-                        .saturating_add(channel.as_int());
-
-                    if mapped_channel >= crate::engine::NUM_CHANNELS as u8 {
+                        .saturating_add(channel.as_int() as u16);
+                    
+                    // 逻辑通道数不会超过指定的256通道数
+                    if mapped_channel >= crate::engine::NUM_CHANNELS as u16 {
                         continue;
                     }
 
@@ -73,7 +74,7 @@ pub fn load_from_file(path: &str) -> Result<LoadedMidi, String> {
 
                     events.push(MidiEvent {
                         tick: track_tick,
-                        channel: mapped_channel,
+                        channel: mapped_channel as u8,
                         message: msg,
                     });
                 }

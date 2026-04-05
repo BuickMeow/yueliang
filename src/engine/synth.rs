@@ -1,4 +1,6 @@
-pub const NUM_CHANNELS: u32 = 64;
+pub const NUM_CHANNELS: u32 = 256;
+const _: () = assert!(NUM_CHANNELS <= 256);
+// 256通道以上还是有点麻烦的，不仅Domino不支持，DAW也不一定能很好支持，改代码也稍微有点费劲，就这样吧
 
 use xsynth_core::{
     AudioPipe, AudioStreamParams, channel::{
@@ -62,9 +64,9 @@ impl SynthEngine {
         Ok(())
     }
 
-    pub fn is_soundfont_loaded(&self) -> bool {
+    /*pub fn is_soundfont_loaded(&self) -> bool {
         self.soundfont_loaded
-    }
+    }*/
 
     /// 直接发送 XSynth 事件（实时安全）
     pub fn send_event(&mut self, event: SynthEvent) {
@@ -72,7 +74,7 @@ impl SynthEngine {
     }
 
     /// 渲染音频到左右声道（行为与原来完全一致）
-    pub fn render(&mut self, left: &mut [f32], right: &mut [f32], num_frames: usize) {
+    /*pub fn render(&mut self, left: &mut [f32], right: &mut [f32], num_frames: usize) {
         let mut interleaved = vec![0.0f32; num_frames * 2];
         self.core.read_samples(&mut interleaved);
 
@@ -80,38 +82,24 @@ impl SynthEngine {
             left[i] = interleaved[i * 2];
             right[i] = interleaved[i * 2 + 1];
         }
-    }
+    }*/
 
-    pub fn reset(&mut self) {
+    fn send_to_all_channels(&mut self, event: ChannelAudioEvent) {
         for ch in 0..NUM_CHANNELS {
             self.core.send_event(SynthEvent::Channel(
                 ch,
-                ChannelEvent::Audio(ChannelAudioEvent::AllNotesOff),
+                ChannelEvent::Audio(event.clone()),
             ));
         }
     }
 
-    pub fn all_notes_off(&mut self) {
-        for ch in 0..NUM_CHANNELS {
-            self.core.send_event(SynthEvent::Channel(
-                ch as u32,
-                ChannelEvent::Audio(ChannelAudioEvent::AllNotesOff),
-            ));
-        }
-    }
+    //pub fn reset(&mut self) { self.send_to_all_channels(ChannelAudioEvent::AllNotesOff); }
+    pub fn all_notes_off(&mut self) { self.send_to_all_channels(ChannelAudioEvent::AllNotesOff); }
+    pub fn all_notes_killed(&mut self) { self.send_to_all_channels(ChannelAudioEvent::AllNotesKilled); }
 
-    pub fn all_notes_killed(&mut self) {
-        for ch in 0..NUM_CHANNELS {
-            self.core.send_event(SynthEvent::Channel(
-                ch as u32,
-                ChannelEvent::Audio(ChannelAudioEvent::AllNotesKilled),
-            ));
-        }
-    }
-
-    pub fn active_voices(&self) -> u64 {
+    /*pub fn active_voices(&self) -> u64 {
         self.core.voice_count()
-    }
+    }*/
 
     pub fn sample_rate(&self) -> f32 {
         self.sample_rate
