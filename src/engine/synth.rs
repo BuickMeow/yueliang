@@ -4,7 +4,7 @@ const _: () = assert!(NUM_CHANNELS <= 256);
 
 use xsynth_core::{
     AudioPipe, AudioStreamParams, channel::{
-        ChannelAudioEvent, ChannelEvent, ChannelConfigEvent
+        ChannelAudioEvent, ChannelEvent, ChannelConfigEvent, ChannelInitOptions
     }, channel_group::{
         ChannelGroup, ChannelGroupConfig, ParallelismOptions, SynthEvent, SynthFormat
     }, soundfont::{
@@ -30,7 +30,7 @@ impl SynthEngine {
         };
 
         let config = ChannelGroupConfig {
-            channel_init_options: Default::default(),
+            channel_init_options: ChannelInitOptions { fade_out_killing: true },
             format: SynthFormat::Custom { channels: NUM_CHANNELS },
             audio_params,
             parallelism: ParallelismOptions::AUTO_PER_CHANNEL,
@@ -64,25 +64,10 @@ impl SynthEngine {
         Ok(())
     }
 
-    /*pub fn is_soundfont_loaded(&self) -> bool {
-        self.soundfont_loaded
-    }*/
-
     /// 直接发送 XSynth 事件（实时安全）
     pub fn send_event(&mut self, event: SynthEvent) {
         self.core.send_event(event);
     }
-
-    /// 渲染音频到左右声道（行为与原来完全一致）
-    /*pub fn render(&mut self, left: &mut [f32], right: &mut [f32], num_frames: usize) {
-        let mut interleaved = vec![0.0f32; num_frames * 2];
-        self.core.read_samples(&mut interleaved);
-
-        for i in 0..num_frames {
-            left[i] = interleaved[i * 2];
-            right[i] = interleaved[i * 2 + 1];
-        }
-    }*/
 
     fn send_to_all_channels(&mut self, event: ChannelAudioEvent) {
         for ch in 0..NUM_CHANNELS {
@@ -105,26 +90,15 @@ impl SynthEngine {
         self.sample_rate
     }
 
-    /*pub fn send_test_note(&mut self) {
-        self.core.send_event(SynthEvent::Channel(
-            0,
-            ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(0)),
-        ));
-        self.core.send_event(SynthEvent::Channel(
-            0,
-            ChannelEvent::Audio(ChannelAudioEvent::NoteOn { key: 60, vel: 100 }),
-        ));
-        nih_log!("Test note sent: C4 (key=60, vel=100)");
-    }*/
-
-    /*pub fn stop_test_note(&mut self) {
-        self.core.send_event(SynthEvent::Channel(
-            0,
-            ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key: 60 }),
-        ));
-    }*/
-
     pub fn read_samples(&mut self, buffer: &mut [f32]) {
         self.core.read_samples(buffer);
+    }
+
+    pub fn system_reset(&mut self) {
+        // Reset controllers + kill all notes to ensure clean state
+        self.core.send_event(SynthEvent::AllChannels(
+            ChannelEvent::Audio(ChannelAudioEvent::ResetControl),
+        ));
+        self.all_notes_killed();
     }
 }

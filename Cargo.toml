@@ -10,13 +10,14 @@ crate-type = ["cdylib", "lib"]
 nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "28b149e", features = ["assert_process_allocs"] }
 nih_plug_egui  = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "28b149e" }
 
-xsynth-core = "0.3.4"
-xsynth-soundfonts = "0.3.4"
+xsynth-core = "0.4.0"
+xsynth-soundfonts = "0.4.0"
 #我们不使用xsynth-realtime，它不适合用在VST情景
 
 midly = "0.5.3"
 
-crossbeam-queue = "0.3.12"
+#crossbeam-queue = "0.3.12"
+#arc-swap = "1.9.1" # 非常适合用于替换路由表或音色库指针
+
 parking_lot = "0.12.5"
-arc-swap = "1.9.0" # 非常适合用于替换路由表或音色库指针
 rfd = "0.17.2"

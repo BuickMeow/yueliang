@@ -92,15 +92,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "170433209e817da6aae2c51aa0dd443009a613425dd041ebfb2492d1c4c11a25"
 
 [[package]]
-name = "arc-swap"
-version = "1.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a07d1f37ff60921c83bdfc7407723bdefe89b44b98a9b772f225c8f9d67141a6"
-dependencies = [
- "rustversion",
-]
-
-[[package]]
 name = "arrayvec"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2050,9 +2041,9 @@ dependencies = [
 
 [[package]]
 name = "simdeez"
-version = "2.0.0"
+version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e08cb8b1603106d47fbd32f34f5e4f332bb07c02c7b2c6ebad893e6f6ba53f9e"
+checksum = "35bc92272e09cdb506befe0c48f5f865fdda52e77bbe1738f74bed79f29c4733"
 dependencies = [
  "cfg-if",
  "paste",
@@ -2983,9 +2974,9 @@ checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
 
 [[package]]
 name = "xsynth-core"
-version = "0.3.4"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e3ed32f276e6de65a085af26811ec4640cc29bc2686270c3ba4a7f804998757"
+checksum = "1dba7af545df823e7813bf8b78d9e0578444cd7aedec6bbc7f0281308d6aac01"
 dependencies = [
  "atomic_refcell",
  "biquad",
@@ -3004,9 +2995,9 @@ dependencies = [
 
 [[package]]
 name = "xsynth-soundfonts"
-version = "0.3.4"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9bc5700f1bb7750cffb2f84c2e6735672c654241317edffba2e5ca505465a70b"
+checksum = "24f08d93774a60ec88ecf416295d1303d2df286667111625e9fe90760ff04f14"
 dependencies = [
  "encoding_rs",
  "encoding_rs_io",
@@ -3022,8 +3013,6 @@ dependencies = [
 name = "yueliang"
 version = "0.1.0"
 dependencies = [
- "arc-swap",
- "crossbeam-queue",
  "midly",
  "nih_plug",
  "nih_plug_egui",
