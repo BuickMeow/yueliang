@@ -4,7 +4,7 @@ const _: () = assert!(NUM_CHANNELS <= 256);
 
 use xsynth_core::{
     AudioPipe, AudioStreamParams, channel::{
-        ChannelAudioEvent, ChannelEvent, ChannelConfigEvent, ChannelInitOptions
+        ChannelAudioEvent, ChannelEvent, ChannelConfigEvent, ChannelInitOptions, ControlEvent
     }, channel_group::{
         ChannelGroup, ChannelGroupConfig, ParallelismOptions, SynthEvent, SynthFormat
     }, soundfont::{
@@ -78,10 +78,11 @@ impl SynthEngine {
         }
     }
 
-    //pub fn reset(&mut self) { self.send_to_all_channels(ChannelAudioEvent::AllNotesOff); }
     pub fn all_notes_off(&mut self) { self.send_to_all_channels(ChannelAudioEvent::AllNotesOff); }
     pub fn all_notes_killed(&mut self) { self.send_to_all_channels(ChannelAudioEvent::AllNotesKilled); }
-
+    pub fn reset_all_controllers(&mut self) { self.send_to_all_channels(ChannelAudioEvent::ResetControl); }
+    pub fn sustain_pedal_off(&mut self) { self.send_to_all_channels(ChannelAudioEvent::Control(ControlEvent::Raw(64, 0))); }
+    
     /*pub fn active_voices(&self) -> u64 {
         self.core.voice_count()
     }*/

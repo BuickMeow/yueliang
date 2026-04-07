@@ -81,16 +81,17 @@ impl MidiPlayer {
     ) {
         let is_playing = transport.playing;
 
-        // 1. DAW 暂停：发送 AllNotesOff（让音符进入 release）
+        // 1. DAW 暂停：发送 AllNotesOff 并且松开踏板
         if !is_playing {
             if self.was_playing {
                 engine.all_notes_off();
+                engine.sustain_pedal_off();
             }
             self.was_playing = false;
             return;
         }
 
-        // 2. DAW 开始播放（从暂停恢复）：先发送 AllNotesKilled 切断残留声音
+        // 2. DAW 开始播放（从暂停恢复）：重置控制器，之后会重新追踪控制器状态
         if is_playing && !self.was_playing {
             engine.system_reset();
         }
