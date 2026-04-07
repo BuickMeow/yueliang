@@ -3,6 +3,7 @@ use crate::engine::{SynthEngine, midi_mapper, midi_filter};
 use crate::data::event::{MidiEvent, MidiMessage};
 use crate::YueliangParams;
 
+const CC_BANK_SELECT_MSB: u8 = 0;
 const CC_RPN_MSB: u8 = 101;
 const CC_RPN_LSB: u8 = 100;
 const CC_DATA_ENTRY_MSB: u8 = 6;
