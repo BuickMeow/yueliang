@@ -5,10 +5,22 @@ use crate::YueliangParams;
 
 const CC_RPN_MSB: u8 = 101;
 const CC_RPN_LSB: u8 = 100;
-const CC_NRPN_MSB: u8 = 99;
-const CC_NRPN_LSB: u8 = 98;
 const CC_DATA_ENTRY_MSB: u8 = 6;
 const CC_DATA_ENTRY_LSB: u8 = 38;
+
+const CC_VOLUME: u8 = 7;
+const CC_PANPOT: u8 = 10;
+const CC_EXPRESSION: u8 = 11;
+const CC_SUSTAIN: u8 = 64;
+const CC_RESONANCE: u8 = 71;
+const CC_CUTOFF: u8 = 74;
+const CC_RELEASE: u8 = 72;
+const CC_ATTACK: u8 = 73;
+
+// 以下CC不进行追踪
+const CC_ALL_SOUND_OFF: u8 = 120;
+const CC_ALL_NOTE_OFF: u8 = 123;
+const CC_RESET_ALL_CONTROLLERS: u8 = 121;
 
 struct StateTable {
     // [channel][cc_number] -> Vec<(tick, value)>
@@ -83,8 +95,8 @@ impl StateTable {
             cc_events.sort_by_key(|(cc, _)| match *cc {
                 CC_RPN_MSB => 0,
                 CC_RPN_LSB => 1,
-                CC_NRPN_MSB => 2,
-                CC_NRPN_LSB => 3,
+                // CC_NRPN_MSB => 2,
+                // CC_NRPN_LSB => 3,
                 CC_DATA_ENTRY_MSB => 4,
                 CC_DATA_ENTRY_LSB => 5,
                 _ => 100,
