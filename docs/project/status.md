@@ -1,6 +1,6 @@
 # Yueliang 项目状态
 
-最后更新：2026-04-03-16-59-50
+最后更新：2026-04-07-14-29-00
 当前版本：v0.0.1
 
 ---
@@ -82,12 +82,16 @@
 - [x] 预过滤与批量发送优化生效
 - [x] CC / PitchBend / ProgramChange 完整映射并修复 PitchBend 公式 bug
 - [x] 走带暂停时 `AllNotesOff`，恢复播放前 `AllNotesKilled` 切断残留
+- [x] **MIDI Chase 功能实现**：播放跳转时自动向前搜索 CC/PC/PB 状态，防止错音
+- [x] **StateTable 方案弃用**：改为实时线性搜索，零预存储内存
 
 ### 阶段 4 关键决策
 
 **Tick-based 事件存储**：用 `tick` 代替 `sample_offset`，使 MIDI 播放速度完全由 DAW BPM 控制，同时天然支持播放头跳转。详见 `docs/decisions/tick-based-event-storage.md`
 
 **解析与调度分离**：`data::midi_loader` 负责非实时文件解析，`engine::midi_player` 负责实时调度，确保音频线程零分配。详见 `docs/decisions/midi-loader-separation.md`
+
+**MIDI Chase 实时搜索方案**：弃用预计算 StateTable，改为播放跳转时实时向前搜索。内存占用 O(1)，支持任意规模 MIDI 文件。详见 `docs/decisions/midi-chase-implementation.md`
 
 ### 阶段 5 进行中 🟡
 
@@ -99,37 +103,16 @@
 - [ ] 路由矩阵（MIDI 通道 → VST 输出总线）
 - [ ] 参数可视化（当前 voice 数、过滤统计）
 
-### 阶段 5 关键决策与踩坑
+---
 
-**macOS 文件选择器崩溃**：在 egui UI 线程直接使用 `rfd::FileDialog::pick_file()`（同步版）会与 `baseview` 事件循环冲突，导致 `SIGABRT`。改为 `rfd::AsyncFileDialog` + 子线程 `simple_block_on` 解决。详见 `docs/knowledge/nih-plug-egui-integration.md`
+## 下一阶段目标
 
-**路径持久化**：使用 `#[persist = "..."]` + `Arc<parking_lot::Mutex<String>>` 存储用户选择的路径，DAW 自动保存/恢复，采样率变更时 `initialize()` 也能重新加载。
+1. **完善路由矩阵**：支持 MIDI 通道到多总线输出映射
+2. **性能监控 UI**：实时显示 voice 数、CPU 占用
+3. **压力测试**：验证上亿音符场景下的稳定性
 
 ---
 
-## 开发阶段规划
+## 已知问题
 
-| 阶段 | 目标 | 状态 |
-|------|------|------|
-| 阶段 1 | 基础脚手架与参数打通 | ✅ 完成 |
-| 阶段 2 | XSynth 引擎集成与音频通路验证 | ✅ 完成 |
-| 阶段 3 | 启用 XSynth 引擎（音色+MIDI）+ 代码拆分 | ✅ 完成 |
-| 阶段 4 | 内部走带同步与预过滤 | ✅ 完成 |
-| 阶段 5 | Egui UI 与动态路由 | 🟡 核心完成，路由矩阵待做 |
-
----
-
-## P0 优先任务
-
-1. 多总线音频输出与路由矩阵
-2. 性能基准测试（Black MIDI Stress Test）
-3. 预分配环形缓冲区替代 `Vec::resize`
-
----
-
-## P1 任务
-
-1. UI 参数可视化（voice 计数、MIDI 过滤统计）
-2. 修复 MIDI 跳转后状态注入（CC / PB / RPN 顺序与 scrub 阈值）
-3. 支持更多 MIDI Meta Event（如 Marker、Lyric 的显示/忽略策略）
-4. 发布第一个公开测试版
+暂无阻塞性问题。

@@ -1,6 +1,6 @@
 # 模块结构
 
-> 最后更新：2026-04-03-15-55-09
+> 最后更新：2026-04-07-14-30-00
 > 当前阶段：v0.0.1
 
 ## 文件组织
@@ -13,7 +13,7 @@ src/
 ├── engine/
 │   ├── synth.rs        # xsynth 封装（渲染、音色加载）
 │   ├── pipeline.rs     # 音频处理管线（gain、缓冲区写入）
-│   ├── midi_player.rs  # MIDI 时间线调度器（走带同步、事件分发）
+│   ├── midi_player.rs  # MIDI 时间线调度器（走带同步、事件分发、Chase）
 │   ├── midi_mapper.rs  # MIDI 协议映射层（纯函数）
 │   └── midi_filter.rs  # MIDI 预过滤层（力度过滤、强制最大力度）
 ├── data.rs             # 数据模块聚合入口
@@ -65,7 +65,10 @@ src/
 **engine/midi_player.rs**
 - 与 DAW Transport 同步
 - 管理内部 MIDI 事件队列
-- 播放头跳转检测（scrub / 循环）
+- 播放头跳转检测（scrub / 循环 / 暂停恢复）
+- **MIDI Chase**：跳转时向前搜索 CC/PC/PB 最新状态并注入
+  - 实时线性搜索，零预存储内存
+  - 支持百万级事件规模
 - 走带暂停时触发 `all_notes_off()`
 - 恢复播放前触发 `all_notes_killed()` 清除残留
 - 时间戳转换（DAW beats ↔ ticks）
@@ -99,47 +102,20 @@ src/
 - 忽略 MIDI 原生 `SetTempo`，完全交给 DAW BPM 控制
 - 返回 `LoadedMidi { events, ppqn }`
 
-### utils
-通用工具。
-
 ---
 
-## 线程模型
+## 数据流
 
 ```
-┌──────────────┐         ┌──────────────────────────────┐
-│   GUI 线程    │◄───────►│        初始化/后台线程        │
-│  (editor)    │ arc-swap │  data::midi_loader (midly)  │
-└──────┬───────┘         └──────────────────────────────┘
-       │
-       │ 无锁队列
-       ▼
-┌─────────────────────────────────────────────────────────┐
-│                        音频线程                          │
-│  ◄── 绝对不能分配内存 / 绝对不能加锁                      │
-│                                                         │
-│  ├── engine::midi_player.rs   (走带同步 + 事件调度)      │
-│  ├── engine::midi_filter.rs   (力度过滤)                 │
-│  ├── engine::midi_mapper.rs   (协议转换)                 │
-│  ├── engine::synth.rs         (合成渲染)                 │
-│  └── engine::pipeline.rs      (gain + 缓冲区写入)        │
-└─────────────────────────────────────────────────────────┘
-```
+文件加载阶段（非实时）：
+  MIDI文件 → midi_loader.rs → Vec<MidiEvent> → midi_player.load()
+  SF2/SFZ文件 → synth.rs → xsynth ChannelGroup
 
----
-
-## 模块依赖关系
-
-```
-lib.rs
-├── engine
-│   ├── synth ◄────── pipeline
-│   ├── midi_player ◄── midi_filter
-│   │                    └── midi_mapper
-│   └── midi_mapper
-├── data
-│   ├── event ◄────── midi_loader
-│   └── midi_loader (仅被 lib.rs initialize 调用)
-├── editor (通过 create_egui_editor 注册到 lib.rs)
-└── params (YueliangParams，含持久化路径字段)
-```
+播放阶段（实时，每buffer）：
+  DAW Transport → midi_player.process()
+    ↓
+  [Chase检测] → 跳转时向前搜索CC/PC/PB → synth.send_event()
+    ↓
+  [事件分发] → midi_filter → midi_mapper → synth.send_event()
+    ↓
+  synth.read_samples() → pipeline (gain) → DAW Buffer

@@ -74,7 +74,7 @@ pub fn load_from_file(path: &str) -> Result<LoadedMidi, String> {
 
                     events.push(MidiEvent {
                         tick: track_tick,
-                        channel: mapped_channel as u8,
+                        channel: mapped_channel as u8,  // 确定了通道不会超过256，所以转回u8
                         message: msg,
                     });
                 }
