@@ -2,14 +2,20 @@ use nih_plug::prelude::*;
 use nih_plug_egui::{create_egui_editor, egui, EguiState};
 use std::sync::Arc;
 use parking_lot::Mutex;
+use egui_system_fonts::{set_auto, FontStyle};
 
 // 简单的 async block_on，不需要额外依赖
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering, AtomicUsize};
 use std::task::{Context, Poll, Wake, Waker};
 use std::thread;
 use std::time::Duration;
+
+mod left_bar;
+mod transport;
+mod sf_manager;
+mod sf_list;
 
 struct DummyWaker;
 impl Wake for DummyWaker {
@@ -38,6 +44,8 @@ pub struct EditorState {
     pub pending_midi: Arc<Mutex<Option<String>>>,
     pub picking_soundfont: Arc<AtomicBool>,
     pub picking_midi: Arc<AtomicBool>,
+    // 新增：当前选中的左侧栏标签页
+    pub selected_left_tab: Arc<AtomicUsize>,
 }
 
 pub fn create(
@@ -55,6 +63,7 @@ pub fn create(
         pending_midi: Arc::new(Mutex::new(None)),
         picking_soundfont: Arc::new(AtomicBool::new(false)),
         picking_midi: Arc::new(AtomicBool::new(false)),
+        selected_left_tab: Arc::new(AtomicUsize::new(0)),
     };
 
     create_egui_editor(
@@ -62,101 +71,43 @@ pub fn create(
         state,
         |_, _| {},
         move |egui_ctx, _setter, state| {
+            // 先绘制左侧栏（SidePanel 自动带分隔线）
+            let selected_tab = left_bar::show_side_panel(egui_ctx, &state.selected_left_tab);
+            
+            // 主内容区域
             egui::CentralPanel::default().show(egui_ctx, |ui| {
-                ui.heading("Yueliang 🌙");
-                ui.separator();
-
-                // ---- SoundFont 选择 ----
-                let sf_picking = state.picking_soundfont.load(Ordering::Relaxed);
-                let sf_button_text = if sf_picking {
-                    "Selecting..."
-                } else {
-                    "Load SoundFont (.sf2 / .sfz)"
-                };
-
-                if ui.add_enabled(!sf_picking, egui::Button::new(sf_button_text)).clicked() {
-                    state.picking_soundfont.store(true, Ordering::Relaxed);
-                    let pending = state.pending_soundfont.clone();
-                    let picking = state.picking_soundfont.clone();
-
-                    thread::spawn(move || {
-                        let result = simple_block_on(
-                            rfd::AsyncFileDialog::new()
-                                .add_filter("SoundFont", &["sf2", "sfz"])
-                                .pick_file(),
-                        );
-                        if let Some(file) = result {
-                            *pending.lock() = Some(file.path().to_string_lossy().to_string());
-                        }
-                        picking.store(false, Ordering::Relaxed);
-                    });
-                }
-
-                let sf_display = state.soundfont_path.lock().clone();
-                ui.label(if sf_display.is_empty() {
-                    "No soundfonts has been loaded".into()
-                } else {
-                    format!("Loaded: {}", sf_display)
-                });
-
-                // 处理已选好的 SoundFont
-                if let Some(path) = state.pending_soundfont.lock().take() {
-                    *state.soundfont_path.lock() = path.clone();
-                    if let Some(ref mut engine) = state.engine.lock().as_mut() {
-                        match engine.load_soundfont(&path) {
-                            Ok(()) => nih_log!("UI 加载 SF2 成功: {}", path),
-                            Err(e) => nih_log!("UI 加载 SF2 失败: {}", e),
-                        }
+                match selected_tab {
+                    left_bar::LeftTab::Transport => {
+                        // 构造 transport state
+                        let transport_state = transport::TransportState {
+                            midi_path: state.midi_path.clone(),
+                            pending_midi: state.pending_midi.clone(),
+                            picking_midi: state.picking_midi.clone(),
+                            midi_player: state.midi_player.clone(),
+                        };
+                        transport::draw(ui, &transport_state);
+                        transport::process_pending(&transport_state);
                     }
-                }
-
-                ui.add_space(16.0);
-
-                // ---- MIDI 选择 ----
-                let midi_picking = state.picking_midi.load(Ordering::Relaxed);
-                let midi_button_text = if midi_picking {
-                    "Selecting..."
-                } else {
-                    "Load MIDI (.mid)"
-                };
-
-                if ui.add_enabled(!midi_picking, egui::Button::new(midi_button_text)).clicked() {
-                    state.picking_midi.store(true, Ordering::Relaxed);
-                    let pending = state.pending_midi.clone();
-                    let picking = state.picking_midi.clone();
-
-                    thread::spawn(move || {
-                        let result = simple_block_on(
-                            rfd::AsyncFileDialog::new()
-                                .add_filter("MIDI", &["mid"])
-                                .pick_file(),
-                        );
-                        if let Some(file) = result {
-                            *pending.lock() = Some(file.path().to_string_lossy().to_string());
-                        }
-                        picking.store(false, Ordering::Relaxed);
-                    });
-                }
-
-                let midi_display = state.midi_path.lock().clone();
-                ui.label(if midi_display.is_empty() {
-                    "No MIDI has been loaded".into()
-                } else {
-                    format!("Loaded: {}", midi_display)
-                });
-
-                // 处理已选好的 MIDI
-                if let Some(path) = state.pending_midi.lock().take() {
-                    *state.midi_path.lock() = path.clone();
-                    match crate::data::midi_loader::load_from_file(&path) {
-                        Ok(loaded) => {
-                            nih_log!("UI 加载 MIDI 成功: {} events", loaded.events.len());
-                            state.midi_player.lock().load(loaded.events, loaded.ppqn);
-                        }
-                        Err(e) => nih_log!("UI 加载 MIDI 失败: {}", e),
+                    left_bar::LeftTab::Soundfonts => {
+                        // 构造 sf_manager state
+                        let sf_state = sf_manager::SfManagerState {
+                            params: params.clone(),
+                            engine: state.engine.clone(),
+                            selected_port: Arc::new(AtomicUsize::new(0)),
+                            edit_mode: Arc::new(AtomicBool::new(false)),
+                            selected_entries: Arc::new(Mutex::new(Vec::new())),
+                            pending_import: Arc::new(Mutex::new(None)),
+                            pending_export: Arc::new(Mutex::new(None)),
+                            show_menu: Arc::new(AtomicBool::new(false)),
+                        };
+                        sf_manager::draw(ui, &sf_state);
+                    }
+                    left_bar::LeftTab::Channels => {
+                        // 通道矩阵（256开关+鼓通道配置）
+                        ui.label("Channel Matrix (256ch + Drum Config)");
                     }
                 }
             });
-        },
+        }
     )
 }

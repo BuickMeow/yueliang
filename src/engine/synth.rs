@@ -8,7 +8,7 @@ use xsynth_core::{
     }, channel_group::{
         ChannelGroup, ChannelGroupConfig, ParallelismOptions, SynthEvent, SynthFormat
     }, soundfont::{
-        SampleSoundfont, SoundfontInitOptions
+        SampleSoundfont, SoundfontInitOptions, SoundfontBase
     }
 };
 
@@ -63,6 +63,31 @@ impl SynthEngine {
         self.soundfont_loaded = true;
         Ok(())
     }
+
+    pub fn load_soundfonts_to_port(&mut self, port: usize, paths: &[String]) -> Result<(), String> {
+        let mut soundfonts: Vec<Arc<dyn SoundfontBase>> = Vec::new();
+        
+        for path in paths {
+            match SampleSoundfont::new(
+                path,
+                self.core.stream_params().clone(),
+                SoundfontInitOptions::default(),
+            ) {
+                Ok(sf) => soundfonts.push(Arc::new(sf)),
+                Err(e) => return Err(format!("Failed to load {}: {:?}", path, e)),
+            }
+        }
+    
+    // 应用到该端口的 16 个通道
+    for ch in (port * 16)..((port + 1) * 16) {
+        self.core.send_event(SynthEvent::Channel(
+            ch as u32,
+            ChannelEvent::Config(ChannelConfigEvent::SetSoundfonts(soundfonts.clone()))
+        ));
+    }
+    
+    Ok(())
+}
 
     /// 直接发送 XSynth 事件（实时安全）
     pub fn send_event(&mut self, event: SynthEvent) {

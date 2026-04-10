@@ -3,6 +3,8 @@ use nih_plug_egui::EguiState;
 use std::sync::Arc;
 use parking_lot::Mutex;
 
+use crate::engine::NUM_CHANNELS;
+
 mod engine;
 mod data;
 mod utils;
@@ -20,6 +22,19 @@ impl Default for InterpolationMode {
     }
 }
 
+#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SoundfontEntry {
+    pub path: String,
+    pub name: String,           // 显示名称（如 "ABCD.sf2"）
+    pub instrument_type: String, // "钢琴"/"鼓"/"多乐器"
+    pub enabled: bool,          // 开关状态
+}
+
+#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PortSoundfonts {
+    pub entries: Vec<SoundfontEntry>, // 替换原来的 paths: Vec<String>
+}
+
 #[derive(Params)]
 pub struct YueliangParams {
     #[persist = "editor_state"]
@@ -30,6 +45,9 @@ pub struct YueliangParams {
 
     #[persist = "midi_path"]
     pub midi_path: Arc<parking_lot::Mutex<String>>,
+
+    #[persist = "port_soundfonts"]
+    pub port_soundfonts: Arc<Mutex<[PortSoundfonts; (NUM_CHANNELS / 16) as usize]>>,
 
     #[id = "gain"]
     pub gain: FloatParam,
@@ -56,6 +74,9 @@ impl Default for YueliangParams {
             editor_state: EguiState::from_size(800, 600),
             soundfont_path: Arc::new(parking_lot::Mutex::new(String::new())),
             midi_path: Arc::new(parking_lot::Mutex::new(String::new())),
+            port_soundfonts: Arc::new(Mutex::new(
+                std::array::from_fn(|_| PortSoundfonts::default())
+            )),
             gain: FloatParam::new(
                 "Gain",
                 1.0,
@@ -128,11 +149,15 @@ impl Plugin for Yueliang {
         let mut engine = engine::SynthEngine::new(sample_rate, max_voices);
 
         // ---- SoundFont ----
-        let sf_saved = self.params.soundfont_path.lock().clone();
-        if !sf_saved.is_empty() {
-            match engine.load_soundfont(&sf_saved) {
-                Ok(()) => nih_log!("SoundFont loaded: {}", sf_saved),
-                Err(e) => nih_log!("Warning: {}", e),
+        let port_configs = self.params.port_soundfonts.lock().clone();
+        for (port_idx, port_config) in port_configs.iter().enumerate() {
+            if !port_config.entries.is_empty() {
+                let paths: Vec<String> = port_config.entries.iter().filter(|e| e.enabled).map(|e| e.path.clone()).collect();
+                if let Err(e) = engine.load_soundfonts_to_port(port_idx, &paths) {
+                    nih_log!("端口 {} 音色加载失败: {}", port_idx, e);
+                } else {
+                    nih_log!("端口 {} 加载 {} 个音色", port_idx, paths.len());
+                }
             }
         }
 

@@ -21,3 +21,5 @@ midly = "0.5.3"
 
 parking_lot = "0.12.5"
 rfd = "0.17.2"
+serde = { version = "1.0.228", features = ["derive"] }
+egui-system-fonts = "0.34.0"
