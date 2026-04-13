@@ -141,7 +141,7 @@ fn spawn_add_soundfont_dialog(state: &SfManagerState) {
                 let entry = crate::SoundfontEntry {
                     path: path_str.clone(),
                     name,
-                    instrument_type: "Multi".to_string(),
+                    //instrument_type: "Multi".to_string(),
                     enabled: true,
                 };
                 

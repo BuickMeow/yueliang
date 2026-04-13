@@ -26,7 +26,7 @@ impl Default for InterpolationMode {
 pub struct SoundfontEntry {
     pub path: String,
     pub name: String,           // 显示名称（如 "ABCD.sf2"）
-    pub instrument_type: String, // "钢琴"/"鼓"/"多乐器"
+    //pub instrument_type: String, // "钢琴"/"鼓"/"多乐器"
     pub enabled: bool,          // 开关状态
 }
 
