@@ -5,7 +5,7 @@ pub fn draw_draggable_list(
     entries: &mut Vec<crate::SoundfontEntry>,
     selected: &mut Vec<usize>,
     is_edit: bool,
-) {
+) -> bool {
     let item_height = 48.0;
     let mut action: Option<ListAction> = None;
     
@@ -66,27 +66,30 @@ pub fn draw_draggable_list(
         });
     }
     
-    // 在循环结束后执行操作（避免借用冲突）
+    // 在循环结束后执行操作
     match action {
         Some(ListAction::ToggleEnabled(i, enabled)) => {
             entries[i].enabled = enabled;
+            return true; // 需要 reload
         }
         Some(ListAction::Swap(from, to)) => {
             entries.swap(from, to);
+            return true; // 需要 reload
         }
         Some(ListAction::Remove(i)) => {
             entries.remove(i);
-            // 更新选中状态
             selected.retain(|&x| x != i);
-            // 调整大于 i 的索引
             for x in selected.iter_mut() {
                 if *x > i {
                     *x -= 1;
                 }
             }
+            return true; // 需要 reload
         }
         None => {}
     }
+    
+    false // 不需要 reload
 }
 
 enum ListAction {

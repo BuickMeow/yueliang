@@ -119,51 +119,63 @@ fn draw_toolbar(ui: &mut egui::Ui, state: &SfManagerState) {
     });
 }
 
-// 添加音色库对话框
+// 添加音色库对话框 - 支持多选
 fn spawn_add_soundfont_dialog(state: &SfManagerState) {
     let port_idx = state.selected_port.load(Ordering::Relaxed);
     let params = state.params.clone();
-    let engine = state.engine.clone();  // 克隆 engine Arc
+    let engine = state.engine.clone();
     
     std::thread::spawn(move || {
-        if let Some(path) = rfd::FileDialog::new()
+        // 使用 pick_files() 代替 pick_file()，支持多选
+        let paths = rfd::FileDialog::new()
             .add_filter("SoundFont", &["sf2", "sfz"])
-            .pick_file() 
-        {
-            let path_str = path.to_string_lossy().to_string();
-            let name = path.file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "Unknown".to_string());
+            .pick_files();  // <-- 关键修改
+        
+        if let Some(paths) = paths {
+            let mut added_count = 0;
             
-            let entry = crate::SoundfontEntry {
-                path: path_str.clone(),
-                name,
-                instrument_type: "Multi".to_string(),
-                enabled: true,
-            };
-            
-            // 添加到 params
-            params.port_soundfonts.lock()[port_idx].entries.push(entry);
-            
-            nih_log!("Added soundfont to port {}: {}", port_idx, path_str);
-            
-            // 关键：通知引擎重新加载该端口的音色
-            if let Some(ref mut engine) = engine.lock().as_mut() {
-                let paths: Vec<String> = params.port_soundfonts.lock()[port_idx].entries
-                    .iter()
-                    .filter(|e| e.enabled)
-                    .map(|e| e.path.clone())
-                    .collect();
+            // 遍历所有选择的文件
+            for path in paths {
+                let path_str = path.to_string_lossy().to_string();
+                let name = path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "Unknown".to_string());
                 
-                if let Err(e) = engine.load_soundfonts_to_port(port_idx, &paths) {
-                    nih_log!("Failed to reload soundfonts for port {}: {}", port_idx, e);
-                } else {
-                    nih_log!("Port {} reloaded with {} soundfonts", port_idx, paths.len());
+                let entry = crate::SoundfontEntry {
+                    path: path_str.clone(),
+                    name,
+                    instrument_type: "Multi".to_string(),
+                    enabled: true,
+                };
+                
+                // 添加到 params
+                params.port_soundfonts.lock()[port_idx].entries.push(entry);
+                added_count += 1;
+                
+                nih_log!("Added soundfont to port {}: {}", port_idx, path_str);
+            }
+            
+            // 所有文件添加完成后，只 reload 一次
+            if added_count > 0 {
+                if let Some(ref mut engine) = engine.lock().as_mut() {
+                    let paths: Vec<String> = params.port_soundfonts.lock()[port_idx].entries
+                        .iter()
+                        .filter(|e| e.enabled)
+                        .map(|e| e.path.clone())
+                        .collect();
+                    
+                    if let Err(e) = engine.load_soundfonts_to_port(port_idx, &paths) {
+                        nih_log!("Failed to reload soundfonts for port {}: {}", port_idx, e);
+                    } else {
+                        nih_log!("Port {} reloaded with {} soundfonts (added {} new)", 
+                                 port_idx, paths.len(), added_count);
+                    }
                 }
             }
         }
     });
 }
+
 
 
 
@@ -176,21 +188,34 @@ fn draw_sf_list(ui: &mut egui::Ui, state: &SfManagerState) {
     let entries = &mut port_soundfonts[port_idx].entries;
     let mut selected = state.selected_entries.lock();
     
-    egui::ScrollArea::vertical().show(ui, |ui| {
+    // 调试显示
+    let enabled_count = entries.iter().filter(|e| e.enabled).count();
+    ui.label(format!("{} soundfonts loaded, {} enabled", entries.len(), enabled_count));
+    
+    let need_reload = egui::ScrollArea::vertical().show(ui, |ui| {
         if entries.is_empty() {
             ui.label("No soundfonts loaded for this port");
-            return;
+            return false;
         }
         
-        // 调用 sf_list 模块的函数
+        // 调用 sf_list 模块的函数，返回是否需要 reload
         crate::editor::sf_list::draw_draggable_list(
             ui,
             entries,
             &mut selected,
             is_edit,
-        );
-    });
+        )
+    }).inner;
+    
+    // 在锁释放后检查是否需要 reload
+    drop(port_soundfonts);
+    drop(selected);
+    
+    if need_reload {
+        reload_port_soundfonts(state, port_idx);
+    }
 }
+
 
 
 fn remove_selected_entries(state: &SfManagerState) {

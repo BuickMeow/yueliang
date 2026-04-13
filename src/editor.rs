@@ -44,8 +44,11 @@ pub struct EditorState {
     pub pending_midi: Arc<Mutex<Option<String>>>,
     pub picking_soundfont: Arc<AtomicBool>,
     pub picking_midi: Arc<AtomicBool>,
-    // 新增：当前选中的左侧栏标签页
     pub selected_left_tab: Arc<AtomicUsize>,
+    // 新增：音色库管理器的状态（持久化）
+    pub sf_selected_port: Arc<AtomicUsize>,
+    pub sf_edit_mode: Arc<AtomicBool>,
+    pub sf_selected_entries: Arc<Mutex<Vec<usize>>>,
 }
 
 pub fn create(
@@ -64,6 +67,9 @@ pub fn create(
         picking_soundfont: Arc::new(AtomicBool::new(false)),
         picking_midi: Arc::new(AtomicBool::new(false)),
         selected_left_tab: Arc::new(AtomicUsize::new(0)),
+        sf_selected_port: Arc::new(AtomicUsize::new(0)),
+        sf_edit_mode: Arc::new(AtomicBool::new(false)),
+        sf_selected_entries: Arc::new(Mutex::new(Vec::new())),
     };
 
     create_egui_editor(
@@ -93,9 +99,9 @@ pub fn create(
                         let sf_state = sf_manager::SfManagerState {
                             params: params.clone(),
                             engine: state.engine.clone(),
-                            selected_port: Arc::new(AtomicUsize::new(0)),
-                            edit_mode: Arc::new(AtomicBool::new(false)),
-                            selected_entries: Arc::new(Mutex::new(Vec::new())),
+                            selected_port: state.sf_selected_port.clone(),
+                            edit_mode: state.sf_edit_mode.clone(),
+                            selected_entries: state.sf_selected_entries.clone(),
                             pending_import: Arc::new(Mutex::new(None)),
                             pending_export: Arc::new(Mutex::new(None)),
                             show_menu: Arc::new(AtomicBool::new(false)),
