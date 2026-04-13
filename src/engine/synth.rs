@@ -13,6 +13,7 @@ use xsynth_core::{
 };
 
 use std::sync::Arc;
+use std::collections::HashMap;
 use nih_plug::prelude::nih_log;
 
 pub struct SynthEngine {
@@ -20,6 +21,7 @@ pub struct SynthEngine {
     sample_rate: f32,
     max_voices: usize,
     soundfont_loaded: bool,
+    sf_cache: HashMap<String, Arc<dyn SoundfontBase>>, // 新增
 }
 
 impl SynthEngine {
@@ -43,6 +45,7 @@ impl SynthEngine {
             sample_rate,
             max_voices,
             soundfont_loaded: false,
+            sf_cache: HashMap::new(),
         }
     }
 
@@ -68,26 +71,34 @@ impl SynthEngine {
         let mut soundfonts: Vec<Arc<dyn SoundfontBase>> = Vec::new();
         
         for path in paths {
-            match SampleSoundfont::new(
-                path,
-                self.core.stream_params().clone(),
-                SoundfontInitOptions::default(),
-            ) {
-                Ok(sf) => soundfonts.push(Arc::new(sf)),
-                Err(e) => return Err(format!("Failed to load {}: {:?}", path, e)),
+            if let Some(sf) = self.sf_cache.get(path) {
+                soundfonts.push(sf.clone());
+            } else {
+                match SampleSoundfont::new(
+                    path,
+                    self.core.stream_params().clone(),
+                    SoundfontInitOptions::default(),
+                ) {
+                    Ok(sf) => {
+                        let arc = Arc::new(sf) as Arc<dyn SoundfontBase>;
+                        self.sf_cache.insert(path.clone(), arc.clone());
+                        soundfonts.push(arc);
+                    }
+                    Err(e) => return Err(format!("Failed to load {}: {:?}", path, e)),
+                }
             }
         }
     
-    // 应用到该端口的 16 个通道
-    for ch in (port * 16)..((port + 1) * 16) {
-        self.core.send_event(SynthEvent::Channel(
-            ch as u32,
-            ChannelEvent::Config(ChannelConfigEvent::SetSoundfonts(soundfonts.clone()))
-        ));
+        for ch in (port * 16)..((port + 1) * 16) {
+            self.core.send_event(SynthEvent::Channel(
+                ch as u32,
+                ChannelEvent::Config(ChannelConfigEvent::SetSoundfonts(soundfonts.clone()))
+            ));
+        }
+        
+        Ok(())
     }
-    
-    Ok(())
-}
+
 
     /// 直接发送 XSynth 事件（实时安全）
     pub fn send_event(&mut self, event: SynthEvent) {

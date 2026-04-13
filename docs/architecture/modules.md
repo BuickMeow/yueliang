@@ -1,14 +1,19 @@
 # 模块结构
 
-> 最后更新：2026-04-07-14-30-00
-> 当前阶段：v0.0.1
+> 最后更新：2026-04-13-01-56-00
+> 当前阶段：v0.0.2
 
 ## 文件组织
 
 ```
 src/
 ├── lib.rs              # 插件主入口
-├── editor.rs           # UI 界面（egui + rfd 文件选择器）
+├── editor.rs           # UI 模块入口
+├── editor/
+│   ├── left_bar.rs     # 左侧导航栏（Transport/Soundfonts/Channels）
+│   ├── transport.rs    # MIDI 走带面板（文件加载 + 播放控制预留）
+│   ├── sf_manager.rs   # 音色库管理器（16端口 + 多音色 + 拖拽排序）
+│   └── sf_list.rs      # 音色库列表（多选、右键菜单、开关）
 ├── engine.rs           # 模块聚合入口（pub mod / pub use）
 ├── engine/
 │   ├── synth.rs        # xsynth 封装（渲染、音色加载）
@@ -34,11 +39,36 @@ src/
 - `process()` 仅负责"接线"：获取 Transport → 调用 `midi_player.process()` → 调用 `pipeline.render()`
 - `initialize()` 根据持久化路径加载 SoundFont 和 MIDI（不再使用硬编码路径）
 
+**数据结构**
+- `SoundfontEntry`：单个音色库配置（路径、名称、乐器类型、启用状态）
+- `PortSoundfonts`：单个端口的音色库列表（`Vec<SoundfontEntry>`）
+- `YueliangParams.port_soundfonts`：16 个端口的配置数组
+
 ### editor
 - 基于 `nih_plug_egui` 的 UI 实现
-- 使用 `rfd::AsyncFileDialog` 提供文件选择器（SoundFont `.sf2`/`.sfz`、MIDI `.mid`）
-- 加载成功后更新 `params` 中的持久化路径，DAW 自动保存/恢复
-- 显示当前已加载的文件名
+- 使用 `rfd::FileDialog` 提供文件选择器（支持多选）
+- 左侧栏导航使用 `egui::SidePanel`，自动分隔线
+
+**editor/left_bar.rs**
+- 左侧 48px 导航栏（Transport / Soundfonts / Channels）
+- 图标按钮悬停变色，选中显示左侧竖条指示器
+
+**editor/transport.rs**
+- MIDI 文件加载按钮
+- 走带控制按钮预留（播放/暂停/停止等）
+
+**editor/sf_manager.rs**
+- 16 端口选择器（Port A-P）
+- 工具栏：编辑模式、全选、移除、导入/导出菜单
+- 管理每个端口的音色库列表
+- 实时通知引擎重新加载音色
+
+**editor/sf_list.rs**
+- 音色库条目显示（名称 + 乐器类型）
+- 启用/禁用开关（checkbox）
+- 多选支持（Ctrl+点击、Shift+范围选择）
+- 拖拽排序
+- 右键菜单（上移/下移/移除）
 
 ### engine
 音频处理核心模块聚合层。
@@ -48,13 +78,17 @@ src/
 **engine/synth.rs**
 - 封装 `xsynth-core` 的 `ChannelGroup`
 - 音色库加载（`load_soundfont`，支持 `.sf2` 和 `.sfz` 双格式）
+- **多音色库加载**（`load_soundfonts_to_port`）：
+  - 支持每个端口加载多个音色库
+  - 音色库按顺序叠加（后加载的覆盖先加载的）
+  - 自动应用到该端口的 16 个通道
 - 音频读取（`read_samples` 包装，用于 `pipeline`）
 - 兼容渲染（`render`，保留用于测试）
 - 发送 XSynth 事件（`send_event`）
 - 全通道静音控制：
   - `all_notes_off()` → `AllNotesOff`（release 衰减）
   - `all_notes_killed()` → `AllNotesKilled`（立即切断）
-- 暴露 `NUM_CHANNELS` 常量
+- 暴露 `NUM_CHANNELS` 常量（256 通道 = 16 端口 × 16 通道）
 
 **engine/pipeline.rs**
 - 预分配交错采样缓冲区，避免音频线程堆分配

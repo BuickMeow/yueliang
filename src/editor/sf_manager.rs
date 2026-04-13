@@ -50,25 +50,20 @@ fn draw_toolbar(ui: &mut egui::Ui, state: &SfManagerState) {
         ui.separator();
 
         // (+) 添加按钮（放在编辑按钮前面）
-        let add_btn = egui::Button::new("+");
+        let add_btn = egui::Button::new("➕");
         if ui.add(add_btn).on_hover_text("Add SoundFont").clicked() {
             spawn_add_soundfont_dialog(state);
         }
         
-        // (2) 编辑按钮 🖊️
-        let is_edit = state.edit_mode.load(Ordering::Relaxed);
-        let edit_btn = egui::Button::new("🖊️").selected(is_edit);
-        if ui.add(edit_btn).on_hover_text("Edit Mode").clicked() {
-            let new_state = !state.edit_mode.load(Ordering::Relaxed);
-            state.edit_mode.store(new_state, Ordering::Relaxed);
-            if !new_state {
-                state.selected_entries.lock().clear();
-            }
+        // (2) 编辑按钮 
+        let copy_btn = egui::Button::new("📑");
+        if ui.add(copy_btn).on_hover_text("Copy to All Ports").clicked() {
+            copy_to_all_ports(state);
         }
         
-        // (3) 全选按钮 📦（仅在编辑模式可用）
+        // (3) 全选按钮 📦（常驻）
         let select_all_btn = egui::Button::new("📦");
-        let select_all_response = ui.add_enabled(is_edit, select_all_btn);
+        let select_all_response = ui.add(select_all_btn);
         if select_all_response.on_hover_text("Select All").clicked() {
             let port_idx = state.selected_port.load(Ordering::Relaxed);
             let entries = &state.params.port_soundfonts.lock()[port_idx].entries;
@@ -77,15 +72,17 @@ fn draw_toolbar(ui: &mut egui::Ui, state: &SfManagerState) {
             for i in 0..entries.len() {
                 selected.push(i);
             }
+            state.edit_mode.store(true, Ordering::Relaxed);
         }
         
         // (4) 移除按钮 🗑️（需要至少选中一个）
         let has_selection = !state.selected_entries.lock().is_empty();
-        let remove_btn = egui::Button::new("🗑️");
-        let remove_response = ui.add_enabled(is_edit && has_selection, remove_btn);
+        let remove_btn = egui::Button::new("\u{1F5D1}"); // 🗑️
+        let remove_response = ui.add_enabled(has_selection, remove_btn);
         if remove_response.on_hover_text("Remove Selected").clicked() {
             remove_selected_entries(state);
         }
+
         
         ui.separator();
         
@@ -176,47 +173,61 @@ fn spawn_add_soundfont_dialog(state: &SfManagerState) {
     });
 }
 
-
-
-
 fn draw_sf_list(ui: &mut egui::Ui, state: &SfManagerState) {
     let port_idx = state.selected_port.load(Ordering::Relaxed);
-    let is_edit = state.edit_mode.load(Ordering::Relaxed);
+    let mut is_edit = state.edit_mode.load(Ordering::Relaxed);
     
-    // 获取当前端口的音色库列表
     let mut port_soundfonts = state.params.port_soundfonts.lock();
     let entries = &mut port_soundfonts[port_idx].entries;
     let mut selected = state.selected_entries.lock();
     
-    // 调试显示
     let enabled_count = entries.iter().filter(|e| e.enabled).count();
     ui.label(format!("{} soundfonts loaded, {} enabled", entries.len(), enabled_count));
     
-    let need_reload = egui::ScrollArea::vertical().show(ui, |ui| {
+    let (need_reload, edit_changed) = egui::ScrollArea::vertical().show(ui, |ui| {
         if entries.is_empty() {
             ui.label("No soundfonts loaded for this port");
-            return false;
+            return (false, false);
         }
         
-        // 调用 sf_list 模块的函数，返回是否需要 reload
         crate::editor::sf_list::draw_draggable_list(
             ui,
             entries,
             &mut selected,
-            is_edit,
+            &mut is_edit,
         )
     }).inner;
     
-    // 在锁释放后检查是否需要 reload
     drop(port_soundfonts);
     drop(selected);
+    
+    // === 键盘快捷键：Delete 删除 / Ctrl+A 全选 ===
+    ui.input(|i| {
+        if i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace) && !state.selected_entries.lock().is_empty() {
+            remove_selected_entries(state);
+        }
+        if i.modifiers.command && i.key_pressed(egui::Key::A) {
+            let port_idx = state.selected_port.load(Ordering::Relaxed);
+            let entries_len = state.params.port_soundfonts.lock()[port_idx].entries.len();
+            if entries_len > 0 {
+                let mut selected = state.selected_entries.lock();
+                selected.clear();
+                for idx in 0..entries_len {
+                    selected.push(idx);
+                }
+                state.edit_mode.store(true, Ordering::Relaxed);
+            }
+        }
+    });
+
+    if edit_changed {
+        state.edit_mode.store(is_edit, Ordering::Relaxed);
+    }
     
     if need_reload {
         reload_port_soundfonts(state, port_idx);
     }
 }
-
-
 
 fn remove_selected_entries(state: &SfManagerState) {
     let port_idx = state.selected_port.load(Ordering::Relaxed);
@@ -263,3 +274,38 @@ fn reload_port_soundfonts(state: &SfManagerState, port_idx: usize) {
     }
 }
 
+fn copy_to_all_ports(state: &SfManagerState) {
+    let port_idx = state.selected_port.load(Ordering::Relaxed);
+    let entries = state.params.port_soundfonts.lock()[port_idx].entries.clone();
+    
+    {
+        let mut port_soundfonts = state.params.port_soundfonts.lock();
+        for i in 0..16 {
+            if i != port_idx {
+                port_soundfonts[i].entries = entries.clone();
+            }
+        }
+    }
+    
+    reload_all_ports(state);
+    
+    nih_log!("Copied port {} soundfonts to all ports", port_idx);
+}
+
+fn reload_all_ports(state: &SfManagerState) {
+    if let Some(ref mut engine) = state.engine.lock().as_mut() {
+        for i in 0..16 {
+            let paths: Vec<String> = state.params.port_soundfonts.lock()[i].entries
+                .iter()
+                .filter(|e| e.enabled)
+                .map(|e| e.path.clone())
+                .collect();
+            
+            if let Err(e) = engine.load_soundfonts_to_port(i, &paths) {
+                nih_log!("Failed to reload soundfonts for port {}: {}", i, e);
+            } else {
+                nih_log!("Port {} reloaded with {} soundfonts", i, paths.len());
+            }
+        }
+    }
+}

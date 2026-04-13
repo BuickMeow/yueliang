@@ -1,7 +1,7 @@
 # Yueliang 项目状态
 
-最后更新：2026-04-07-14-29-00
-当前版本：v0.0.1
+最后更新：2026-04-13-01-56-00
+当前版本：v0.0.2
 
 ---
 
@@ -93,13 +93,26 @@
 
 **MIDI Chase 实时搜索方案**：弃用预计算 StateTable，改为播放跳转时实时向前搜索。内存占用 O(1)，支持任意规模 MIDI 文件。详见 `docs/decisions/midi-chase-implementation.md`
 
-### 阶段 5 进行中 🟡
+### 阶段 5 已完成 ✅
 
 - [x] Egui UI 基础框架（`editor.rs`）
+- [x] 左侧栏导航（Transport / Soundfonts / Channels）
 - [x] 文件选择器（MIDI `.mid`、SoundFont `.sf2`/`.sfz`）
 - [x] `rfd::AsyncFileDialog` 集成（修复 macOS 同步对话框崩溃）
 - [x] 路径持久化（DAW 保存/打开工程时自动恢复用户选择的文件）
 - [x] 去掉默认硬编码音色库与 MIDI 引用
+- [x] **16 端口音色库管理器**（Port A-P）
+  - [x] 每个端口独立的音色库列表
+  - [x] 多音色库叠加（从下到上覆盖）
+  - [x] 拖拽排序
+  - [x] 启用/禁用开关
+  - [x] 多选编辑（Ctrl/Cmd + 点击、Shift + 范围选择）
+  - [x] JSON 配置导入/导出
+- [x] MIDI 走带面板（文件加载完成，播放控制预留）
+
+### 阶段 6 进行中 🟡
+
+- [ ] 通道矩阵（256 通道开关 + 鼓通道配置）
 - [ ] 路由矩阵（MIDI 通道 → VST 输出总线）
 - [ ] 参数可视化（当前 voice 数、过滤统计）
 
