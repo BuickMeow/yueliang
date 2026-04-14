@@ -1,9 +1,11 @@
 use nih_plug::prelude::*;
 use nih_plug_egui::egui;
+//use serde::de;
 use std::sync::Arc;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
 
+#[derive(Clone)]
 pub struct SfManagerState {
     pub params: Arc<crate::YueliangParams>,
     pub engine: Arc<Mutex<Option<crate::engine::SynthEngine>>>,
@@ -15,6 +17,26 @@ pub struct SfManagerState {
     pub show_menu: Arc<AtomicBool>,             // 菜单是否展开
     pub drag_indices: Arc<Mutex<Vec<usize>>>,
     pub drag_insert_idx: Arc<AtomicUsize>,
+}
+
+impl SfManagerState {
+    pub fn new(
+        params: Arc<crate::YueliangParams>,
+        engine: Arc<Mutex<Option<crate::engine::SynthEngine>>>,
+    ) -> Self {
+        Self {
+            params,
+            engine,
+            selected_port: Arc::new(AtomicUsize::new(0)),
+            edit_mode: Arc::new(AtomicBool::new(false)),
+            selected_entries: Arc::new(Mutex::new(Vec::new())),
+            pending_import: Arc::new(Mutex::new(None)),
+            pending_export: Arc::new(Mutex::new(None)),
+            show_menu: Arc::new(AtomicBool::new(false)),
+            drag_indices: Arc::new(Mutex::new(Vec::new())),
+            drag_insert_idx: Arc::new(AtomicUsize::new(0)),
+        }
+    }
 }
 
 pub fn draw(ui: &mut egui::Ui, state: &SfManagerState) {

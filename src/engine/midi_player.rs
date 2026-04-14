@@ -19,10 +19,10 @@ const CC_CUTOFF: u8 = 74;
 const CC_RELEASE: u8 = 72;
 const CC_ATTACK: u8 = 73;
 
-// 以下CC不进行追踪
-const CC_ALL_SOUND_OFF: u8 = 120;
-const CC_ALL_NOTE_OFF: u8 = 123;
-const CC_RESET_ALL_CONTROLLERS: u8 = 121;
+// 以下CC不进行追踪，仅进行参考留档
+//const CC_ALL_SOUND_OFF: u8 = 120;
+//const CC_ALL_NOTE_OFF: u8 = 123;
+//const CC_RESET_ALL_CONTROLLERS: u8 = 121;
 
 /// 需要 Chase 的 CC 列表（按发送顺序排列）
 const CHASE_CC_LIST: &[u8] = &[

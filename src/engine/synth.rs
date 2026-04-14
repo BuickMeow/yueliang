@@ -14,12 +14,12 @@ use xsynth_core::{
 
 use std::sync::Arc;
 use std::collections::HashMap;
-use nih_plug::prelude::nih_log;
+//use nih_plug::prelude::nih_log;
 
 pub struct SynthEngine {
     core: ChannelGroup,
     sample_rate: f32,
-    max_voices: usize,
+    //max_voices: usize,
     soundfont_loaded: bool,
     sf_cache: HashMap<String, Arc<dyn SoundfontBase>>, // 新增
 }
@@ -43,13 +43,13 @@ impl SynthEngine {
         Self {
             core,
             sample_rate,
-            max_voices,
+            //max_voices,
             soundfont_loaded: false,
             sf_cache: HashMap::new(),
         }
     }
 
-    pub fn load_soundfont(&mut self, path: &str) -> Result<(), String> {
+    /*pub fn load_soundfont(&mut self, path: &str) -> Result<(), String> {
         let soundfont = match SampleSoundfont::new(
             path,
             self.core.stream_params().clone(),
@@ -65,7 +65,7 @@ impl SynthEngine {
 
         self.soundfont_loaded = true;
         Ok(())
-    }
+    }*/
 
     pub fn load_soundfonts_to_port(&mut self, port: usize, paths: &[String]) -> Result<(), String> {
         let mut soundfonts: Vec<Arc<dyn SoundfontBase>> = Vec::new();
@@ -116,7 +116,7 @@ impl SynthEngine {
 
     pub fn all_notes_off(&mut self) { self.send_to_all_channels(ChannelAudioEvent::AllNotesOff); }
     pub fn all_notes_killed(&mut self) { self.send_to_all_channels(ChannelAudioEvent::AllNotesKilled); }
-    pub fn reset_all_controllers(&mut self) { self.send_to_all_channels(ChannelAudioEvent::ResetControl); }
+    pub fn reset_all_controllers(&mut self) { self.send_to_all_channels(ChannelAudioEvent::ResetControl); } // 未来会用，别删
     pub fn sustain_pedal_off(&mut self) { self.send_to_all_channels(ChannelAudioEvent::Control(ControlEvent::Raw(64, 0))); }
     
     /*pub fn active_voices(&self) -> u64 {

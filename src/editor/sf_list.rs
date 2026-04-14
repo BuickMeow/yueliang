@@ -51,27 +51,8 @@ pub fn draw_draggable_list(
         let row_id = ui.id().with("sf_row").with(i);
         let row_response = ui.interact(item_rect, row_id, egui::Sense::click_and_drag());
         
-        // ... allocate_new_ui 绘制内容 ...
-        
-        if !is_dragging && row_response.clicked() {
-            handle_selection(i, selected, is_edit, ui);
-            edit_changed = true;
-        }
-        
-        if row_response.drag_started() {
-            if !is_selected {
-                selected.clear();
-                selected.push(i);
-                *is_edit = true;
-                edit_changed = true;
-            }
-            drag_indices.clear();
-            drag_indices.extend_from_slice(selected);
-            drag_indices.sort();
-            *drag_insert_idx = i;
-        }
-        
-        let content_response = ui.allocate_new_ui(
+        // 绘制内容
+        ui.allocate_new_ui(
             egui::UiBuilder::new()
                 .max_rect(item_rect)
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
@@ -88,17 +69,22 @@ pub fn draw_draggable_list(
                     ui.add_space(2.0);
                     ui.spacing_mut().item_spacing.y = 0.0;
                     ui.add(egui::Label::new(&entry.name).selectable(false));
-                    ui.small(&entry.path);
+                    ui.add(egui::Label::new(egui::RichText::new(&entry.path).small()).selectable(false));
                 });
             },
         );
         
+        // 点击选择
         if !is_dragging && row_response.clicked() {
             handle_selection(i, selected, is_edit, ui);
             edit_changed = true;
         }
         
-        if content_response.response.drag_started() {
+        // 拖拽开始时记录起始位置到 memory
+        if row_response.drag_started() {
+            if let Some(pos) = ui.ctx().input(|i| i.pointer.interact_pos()) {
+                ui.memory_mut(|m| m.data.insert_temp(egui::Id::new("sf_drag_start"), pos));
+            }
             if !is_selected {
                 selected.clear();
                 selected.push(i);

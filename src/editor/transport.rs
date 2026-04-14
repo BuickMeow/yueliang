@@ -5,14 +5,28 @@ use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
-// 从 editor.rs 导入 simple_block_on，或者在这里重新定义
-use crate::editor::simple_block_on;
+use crate::utils::simple_block_on;
 
+#[derive(Clone)]
 pub struct TransportState {
     pub midi_path: Arc<parking_lot::Mutex<String>>,
     pub pending_midi: Arc<Mutex<Option<String>>>,
     pub picking_midi: Arc<AtomicBool>,
     pub midi_player: Arc<Mutex<crate::engine::MidiPlayer>>,
+}
+
+impl TransportState {
+    pub fn new(
+        midi_path: Arc<parking_lot::Mutex<String>>,
+        midi_player: Arc<Mutex<crate::engine::MidiPlayer>>,
+    ) -> Self {
+        Self {
+            midi_path,
+            pending_midi: Arc::new(Mutex::new(None)),
+            picking_midi: Arc::new(AtomicBool::new(false)),
+            midi_player,
+        }
+    }
 }
 
 pub fn draw(ui: &mut egui::Ui, state: &TransportState) {
