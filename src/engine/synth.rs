@@ -119,9 +119,9 @@ impl SynthEngine {
     pub fn reset_all_controllers(&mut self) { self.send_to_all_channels(ChannelAudioEvent::ResetControl); } // 未来会用，别删
     pub fn sustain_pedal_off(&mut self) { self.send_to_all_channels(ChannelAudioEvent::Control(ControlEvent::Raw(64, 0))); }
     
-    /*pub fn active_voices(&self) -> u64 {
+    pub fn active_voices(&self) -> u64 {
         self.core.voice_count()
-    }*/
+    }
 
     pub fn sample_rate(&self) -> f32 {
         self.sample_rate

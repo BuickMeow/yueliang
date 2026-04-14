@@ -208,7 +208,15 @@ fn draw_sf_list(ui: &mut egui::Ui, state: &SfManagerState) {
     let mut selected = state.selected_entries.lock();
     
     let enabled_count = entries.iter().filter(|e| e.enabled).count();
-    ui.label(format!("{} soundfonts loaded, {} enabled", entries.len(), enabled_count));
+
+    let voices = state.engine.lock().as_ref()
+        .map(|e| e.active_voices())
+        .unwrap_or(0);
+
+    ui.label(format!(
+        "{} soundfonts loaded, {} enabled, {} voices",
+        entries.len(), enabled_count, voices
+    ));
     
     let result = egui::ScrollArea::vertical().show(ui, |ui| {
         if entries.is_empty() {
