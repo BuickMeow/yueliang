@@ -1,27 +1,46 @@
 use nih_plug_egui::egui;
 
+#[derive(Default)]
+pub struct ListResult {
+    pub need_reload: bool,
+    pub edit_changed: bool,
+    pub drag_released: bool,
+}
+
 pub fn draw_draggable_list(
     ui: &mut egui::Ui,
     entries: &mut Vec<crate::SoundfontEntry>,
     selected: &mut Vec<usize>,
     is_edit: &mut bool,
-) -> (bool, bool) {
-    let item_height = 36.0; // 可以适当调小
+    drag_indices: &mut Vec<usize>,
+    drag_insert_idx: &mut usize,
+) -> ListResult {
+    let item_height = 36.0;
     let mut action: Option<ListAction> = None;
     let mut edit_changed = false;
+    let mut drag_released = false;
+    let mut item_rects: Vec<egui::Rect> = Vec::new();
+    let is_dragging = !drag_indices.is_empty();
     
     for i in 0..entries.len() {
         let entry = &entries[i];
         let is_selected = selected.contains(&i);
+        let is_being_dragged = drag_indices.contains(&i);
         
         let top_left = ui.available_rect_before_wrap().min;
         let item_rect = egui::Rect::from_min_size(
             top_left,
             egui::vec2(ui.available_width(), item_height),
         );
+        item_rects.push(item_rect);
         
-        // 绘制选中背景
-        if is_selected {
+        if is_being_dragged {
+            ui.painter().rect_filled(
+                item_rect,
+                2.0,
+                ui.visuals().window_fill.gamma_multiply(0.5),
+            );
+        } else if is_selected {
             ui.painter().rect_filled(
                 item_rect,
                 2.0,
@@ -29,38 +48,67 @@ pub fn draw_draggable_list(
             );
         }
         
-        // 先注册整行点击（checkbox 之后会覆盖它）
         let row_id = ui.id().with("sf_row").with(i);
-        let row_response = ui.interact(item_rect, row_id, egui::Sense::click());
+        let row_response = ui.interact(item_rect, row_id, egui::Sense::click_and_drag());
         
-        // 再绘制内容
-        ui.allocate_new_ui(
+        // ... allocate_new_ui 绘制内容 ...
+        
+        if !is_dragging && row_response.clicked() {
+            handle_selection(i, selected, is_edit, ui);
+            edit_changed = true;
+        }
+        
+        if row_response.drag_started() {
+            if !is_selected {
+                selected.clear();
+                selected.push(i);
+                *is_edit = true;
+                edit_changed = true;
+            }
+            drag_indices.clear();
+            drag_indices.extend_from_slice(selected);
+            drag_indices.sort();
+            *drag_insert_idx = i;
+        }
+        
+        let content_response = ui.allocate_new_ui(
             egui::UiBuilder::new()
                 .max_rect(item_rect)
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
             |ui| {
                 ui.set_height(item_height);
-                
-                ui.add_space(4.0); // ← 复选框往右挪 4 像素
+                ui.add_space(4.0);
                 
                 let mut enabled = entry.enabled;
                 if ui.checkbox(&mut enabled, "").changed() {
                     action = Some(ListAction::ToggleEnabled(i, enabled));
                 }
                 
-                //ui.add_space(2.0);
                 ui.vertical(|ui| {
-                    ui.add_space(4.0);
+                    ui.add_space(2.0);
                     ui.spacing_mut().item_spacing.y = 0.0;
-                    ui.label(&entry.name);
+                    ui.add(egui::Label::new(&entry.name).selectable(false));
                     ui.small(&entry.path);
                 });
             },
         );
         
-        if row_response.clicked() {
+        if !is_dragging && row_response.clicked() {
             handle_selection(i, selected, is_edit, ui);
             edit_changed = true;
+        }
+        
+        if content_response.response.drag_started() {
+            if !is_selected {
+                selected.clear();
+                selected.push(i);
+                *is_edit = true;
+                edit_changed = true;
+            }
+            drag_indices.clear();
+            drag_indices.extend_from_slice(selected);
+            drag_indices.sort();
+            *drag_insert_idx = i;
         }
         
         row_response.context_menu(|ui| {
@@ -78,7 +126,71 @@ pub fn draw_draggable_list(
             }
         });
     }
-
+    
+    if is_dragging {
+        let pointer_y = ui.ctx().input(|i| i.pointer.interact_pos().map(|p| p.y));
+        
+        if let Some(py) = pointer_y {
+            let mut visible_idx = 0;
+            let mut new_insert = 0;
+            for i in 0..entries.len() {
+                if drag_indices.contains(&i) { continue; }
+                if py < item_rects[i].center().y {
+                    new_insert = visible_idx;
+                    break;
+                }
+                visible_idx += 1;
+                new_insert = visible_idx;
+            }
+            *drag_insert_idx = new_insert;
+        }
+        
+        let mut visible_idx = 0;
+        let mut line_y = None;
+        for i in 0..entries.len() {
+            if drag_indices.contains(&i) { continue; }
+            if visible_idx == *drag_insert_idx {
+                line_y = Some(item_rects[i].top());
+                break;
+            }
+            visible_idx += 1;
+        }
+        if line_y.is_none() {
+            line_y = item_rects.last().map(|r| r.bottom());
+        }
+        if let Some(y) = line_y {
+            let x1 = item_rects[0].left();
+            let x2 = item_rects[0].right();
+            ui.painter().line_segment(
+                [egui::pos2(x1, y), egui::pos2(x2, y)],
+                egui::Stroke::new(3.0, ui.visuals().selection.bg_fill),
+            );
+        }
+        
+        if let Some(pos) = ui.ctx().input(|i| i.pointer.interact_pos()) {
+            let ghost_h = item_height * drag_indices.len() as f32;
+            let ghost_rect = egui::Rect::from_min_size(
+                pos + egui::vec2(12.0, -ghost_h / 2.0),
+                egui::vec2(item_rects[0].width() * 0.9, ghost_h),
+            );
+            ui.painter().rect_filled(
+                ghost_rect,
+                4.0,
+                ui.visuals().window_fill.gamma_multiply(0.95),
+            );
+            ui.painter().rect_stroke(
+                ghost_rect,
+                4.0,
+                egui::Stroke::new(1.0, ui.visuals().selection.bg_fill),
+                egui::StrokeKind::Inside,
+            );
+        }
+        
+        if ui.ctx().input(|i| i.pointer.any_released()) {
+            drag_released = true;
+        }
+    }
+    
     let need_reload = match action {
         Some(ListAction::ToggleEnabled(i, enabled)) => {
             entries[i].enabled = enabled;
@@ -101,10 +213,8 @@ pub fn draw_draggable_list(
         None => false,
     };
     
-    (need_reload, edit_changed)
+    ListResult { need_reload, edit_changed, drag_released }
 }
-
-// handle_selection 保持不变
 
 enum ListAction {
     ToggleEnabled(usize, bool),
@@ -116,14 +226,12 @@ fn handle_selection(i: usize, selected: &mut Vec<usize>, is_edit: &mut bool, ui:
     let modifiers = ui.ctx().input(|i| i.modifiers);
     
     if !*is_edit {
-        // 不在编辑模式：进入编辑模式并单选该卡片
         *is_edit = true;
         selected.clear();
         selected.push(i);
         return;
     }
     
-    // 在编辑模式下，普通点击已选中的唯一卡片 -> 退出编辑模式
     if !modifiers.command && !modifiers.ctrl && !modifiers.shift
         && selected.len() == 1 && selected[0] == i
     {

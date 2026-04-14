@@ -49,6 +49,9 @@ pub struct EditorState {
     pub sf_selected_port: Arc<AtomicUsize>,
     pub sf_edit_mode: Arc<AtomicBool>,
     pub sf_selected_entries: Arc<Mutex<Vec<usize>>>,
+    pub sf_drag_indices: Arc<Mutex<Vec<usize>>>,      // 正在拖拽的原始索引
+    pub sf_drag_insert_idx: Arc<AtomicUsize>,         // 目标插入位置
+
 }
 
 pub fn create(
@@ -70,6 +73,8 @@ pub fn create(
         sf_selected_port: Arc::new(AtomicUsize::new(0)),
         sf_edit_mode: Arc::new(AtomicBool::new(false)),
         sf_selected_entries: Arc::new(Mutex::new(Vec::new())),
+        sf_drag_indices: Arc::new(Mutex::new(Vec::new())),
+        sf_drag_insert_idx: Arc::new(AtomicUsize::new(0)),
     };
 
     create_egui_editor(
@@ -105,6 +110,8 @@ pub fn create(
                             pending_import: Arc::new(Mutex::new(None)),
                             pending_export: Arc::new(Mutex::new(None)),
                             show_menu: Arc::new(AtomicBool::new(false)),
+                            drag_indices: state.sf_drag_indices.clone(),
+                            drag_insert_idx: state.sf_drag_insert_idx.clone(),
                         };
                         sf_manager::draw(ui, &sf_state);
                     }

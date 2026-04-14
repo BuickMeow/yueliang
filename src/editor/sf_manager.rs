@@ -13,6 +13,8 @@ pub struct SfManagerState {
     pub pending_import: Arc<Mutex<Option<String>>>,
     pub pending_export: Arc<Mutex<Option<String>>>,
     pub show_menu: Arc<AtomicBool>,             // 菜单是否展开
+    pub drag_indices: Arc<Mutex<Vec<usize>>>,
+    pub drag_insert_idx: Arc<AtomicUsize>,
 }
 
 pub fn draw(ui: &mut egui::Ui, state: &SfManagerState) {
@@ -176,6 +178,8 @@ fn spawn_add_soundfont_dialog(state: &SfManagerState) {
 fn draw_sf_list(ui: &mut egui::Ui, state: &SfManagerState) {
     let port_idx = state.selected_port.load(Ordering::Relaxed);
     let mut is_edit = state.edit_mode.load(Ordering::Relaxed);
+    let mut drag_indices = state.drag_indices.lock();
+    let mut drag_insert_idx = state.drag_insert_idx.load(Ordering::Relaxed);
     
     let mut port_soundfonts = state.params.port_soundfonts.lock();
     let entries = &mut port_soundfonts[port_idx].entries;
@@ -184,49 +188,81 @@ fn draw_sf_list(ui: &mut egui::Ui, state: &SfManagerState) {
     let enabled_count = entries.iter().filter(|e| e.enabled).count();
     ui.label(format!("{} soundfonts loaded, {} enabled", entries.len(), enabled_count));
     
-    let (need_reload, edit_changed) = egui::ScrollArea::vertical().show(ui, |ui| {
+    let result = egui::ScrollArea::vertical().show(ui, |ui| {
         if entries.is_empty() {
-            ui.label("No soundfonts loaded for this port");
-            return (false, false);
+            return crate::editor::sf_list::ListResult::default();
         }
-        
         crate::editor::sf_list::draw_draggable_list(
             ui,
             entries,
             &mut selected,
             &mut is_edit,
+            &mut drag_indices,
+            &mut drag_insert_idx,
         )
     }).inner;
+
+    /*ui.label(format!(
+        "DEBUG drag={} insert={} released={}",
+        drag_indices.len(),
+        drag_insert_idx,
+        result.drag_released
+    ));*/
     
     drop(port_soundfonts);
     drop(selected);
     
-    // === 键盘快捷键：Delete 删除 / Ctrl+A 全选 ===
-    ui.input(|i| {
-        if i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace) && !state.selected_entries.lock().is_empty() {
-            remove_selected_entries(state);
-        }
-        if i.modifiers.command && i.key_pressed(egui::Key::A) {
-            let port_idx = state.selected_port.load(Ordering::Relaxed);
-            let entries_len = state.params.port_soundfonts.lock()[port_idx].entries.len();
-            if entries_len > 0 {
-                let mut selected = state.selected_entries.lock();
-                selected.clear();
-                for idx in 0..entries_len {
-                    selected.push(idx);
-                }
-                state.edit_mode.store(true, Ordering::Relaxed);
-            }
-        }
-    });
-
-    if edit_changed {
+    if result.edit_changed {
         state.edit_mode.store(is_edit, Ordering::Relaxed);
     }
-    
-    if need_reload {
+
+    if result.need_reload {
         reload_port_soundfonts(state, port_idx);
     }
+    
+    // 拖拽释放：执行插入
+    if result.drag_released && !drag_indices.is_empty() {
+        let mut port_soundfonts = state.params.port_soundfonts.lock();
+        let entries = &mut port_soundfonts[port_idx].entries;
+        
+        // 按原顺序提取被拖拽的条目
+        let mut dragged_items: Vec<crate::SoundfontEntry> = Vec::new();
+        for &idx in drag_indices.iter() {
+            if idx < entries.len() {
+                dragged_items.push(entries[idx].clone());
+            }
+        }
+        
+        // 从后往前删，避免索引错乱
+        let mut remove_set = drag_indices.clone();
+        remove_set.sort_by(|a, b| b.cmp(a));
+        remove_set.dedup();
+        for idx in remove_set {
+            if idx < entries.len() {
+                entries.remove(idx);
+            }
+        }
+        
+        // drag_insert_idx 已经是 sf_list.rs 按"删除后"的可见索引算好的，直接用
+        let mut insert_at = drag_insert_idx.min(entries.len());
+        
+        // 插入
+        for item in dragged_items {
+            entries.insert(insert_at, item);
+            insert_at += 1;
+        }
+        
+        // 清理状态
+        drag_indices.clear();
+        state.drag_insert_idx.store(0, Ordering::Relaxed);
+        state.selected_entries.lock().clear();
+        state.edit_mode.store(false, Ordering::Relaxed);
+        
+        drop(port_soundfonts);
+        reload_port_soundfonts(state, port_idx);
+    }
+    
+    drop(drag_indices);
 }
 
 fn remove_selected_entries(state: &SfManagerState) {

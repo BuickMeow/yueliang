@@ -1,6 +1,6 @@
 # Yueliang 项目状态
 
-最后更新：2026-04-13-01-56-00
+最后更新：2026-04-14-03-49-32
 当前版本：v0.0.2
 
 ---
@@ -104,11 +104,18 @@
 - [x] **16 端口音色库管理器**（Port A-P）
   - [x] 每个端口独立的音色库列表
   - [x] 多音色库叠加（从下到上覆盖）
-  - [x] 拖拽排序
+  - [x] 拖拽排序（多选拖拽、插入线提示、幽灵预览）
   - [x] 启用/禁用开关
   - [x] 多选编辑（Ctrl/Cmd + 点击、Shift + 范围选择）
+  - [x] 复制当前端口配置到所有端口（📑 按钮）
   - [x] JSON 配置导入/导出
 - [x] MIDI 走带面板（文件加载完成，播放控制预留）
+
+### 阶段 5 关键决策与踩坑
+
+**音色库缓存**：`SynthEngine` 使用 `HashMap<String, Arc<dyn SoundfontBase>>` 缓存已加载的 SF2，避免 16 端口复制时重复加载导致内存爆炸。详见 `docs/decisions/soundfont-cache.md`
+
+**egui 拖拽排序实现**：使用 `Sense::click_and_drag()` + `allocate_new_ui()` + `ui.interact()` 实现整行拖拽，插入索引按"删除后可见项"计算。详见 `docs/knowledge/egui-drag-sort.md` 与 `docs/notes/drag-sort-insert-index.md`
 
 ### 阶段 6 进行中 🟡
 
