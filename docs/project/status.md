@@ -1,6 +1,6 @@
 # Yueliang 项目状态
 
-最后更新：2026-04-14-03-49-32
+最后更新：2026-04-15-10-18-04
 当前版本：v0.0.2
 
 ---
@@ -117,11 +117,28 @@
 
 **egui 拖拽排序实现**：使用 `Sense::click_and_drag()` + `allocate_new_ui()` + `ui.interact()` 实现整行拖拽，插入索引按"删除后可见项"计算。详见 `docs/knowledge/egui-drag-sort.md` 与 `docs/notes/drag-sort-insert-index.md`
 
-### 阶段 6 进行中 🟡
+### 阶段 6 部分完成 🟡
 
-- [ ] 通道矩阵（256 通道开关 + 鼓通道配置）
+- [x] **通道矩阵（Channel Matrix）**
+  - [x] 16×16 按钮网格（Port A-P × Channel 1-16 = 256 通道）
+  - [x] 表头整行/整列一键开关
+  - [x] 右键 Solo / 取消 Solo（支持单格、整行、整列）
+  - [x] 音频线程静音过滤（`process()` 内零锁数组索引）
+  - [x] 静音时自动发送 `AllNotesOff` + `Sustain Pedal Off (CC64=0)`
+  - [x] 恢复发声时自动 Chase 该通道最新 CC/PC/PB 状态
+  - [ ] ~~鼠标拖动连选~~（已尝试多种实现，因 egui 交互捕获机制复杂暂时搁置）
 - [ ] 路由矩阵（MIDI 通道 → VST 输出总线）
 - [ ] 参数可视化（当前 voice 数、过滤统计）
+
+### 阶段 6 关键决策与踩坑
+
+**实时过滤位置**：在 `midi_filter.rs` 中基于局部 `[bool; 256]` 数组进行过滤，每个 buffer 只 `lock()` 一次 `Vec<bool>`，避免音频线程反复竞争 Mutex。
+
+**Chase 时序问题**：通道恢复的 Chase 事件必须放在 `midi_player.process()` 内部、所有 `system_reset()` 之后发送，否则会被 reset 覆盖而"失效"。
+
+**egui Grid 默认列宽陷阱**：`egui::Grid` 的 `min_col_width` 默认值为 `interact_size.x`（40px），会导致 24px 按钮被强制拉宽，视觉间距严重不均。必须显式设置 `.min_col_width(0.0)`。
+
+**serde 数组长度限制**：`[bool; 256]` 不支持 `Serialize/Deserialize`（serde 仅原生支持到 32 长度），通道矩阵持久化改用 `Vec<bool>`。
 
 ---
 
@@ -135,4 +152,4 @@
 
 ## 已知问题
 
-暂无阻塞性问题。
+- `lib.rs` 中 `Yueliang.last_mutes` 字段已冗余（状态已移至 `MidiPlayer`），可后续清理。

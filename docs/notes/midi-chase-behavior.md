@@ -1,6 +1,6 @@
 # MIDI Chase 行为说明
 
-最后更新：2026-04-07-14-32-00
+最后更新：2026-04-15-10-18-04
 
 ---
 
@@ -102,6 +102,26 @@ Pitch Bend 最后发送，因为其他 CC 可能影响它的效果。
 **可能原因**：MIDI 文件过大，Chase 扫描超时。
 
 **解决**：减小 MIDI 文件规模，或限制搜索范围（修改 `CHASE_MAX_SEARCH_TICKS`）。
+
+---
+
+## 通道矩阵恢复时的 Chase
+
+当用户在 Channel Matrix 中将某个通道从**静音**切换为**发声**时，如果 DAW 正在播放，该通道需要立即恢复正确的控制器状态，否则会出现"哑巴"或音色错乱。
+
+### 实现要点
+
+1. **对比 `last_mutes`**：`midi_player.process()` 每 buffer 接收当前 `mutes` 数组，与内部保存的 `last_mutes` 做对比。
+2. **检测状态翻转**：当 `!last_mutes[ch] && mutes[ch]` 时，说明该通道刚刚恢复发声。
+3. **执行单通道 Chase**：调用 `chase_single_channel(current_tick, ch)` 向前搜索该通道最新的 CC/PC/PB，并注入 XSynth。
+4. **时序关键**：通道恢复的 Chase 必须放在 `system_reset()` 之后执行，否则会被 reset 清掉而"失效"。
+
+### 静音时的配套处理
+
+通道从发声变为静音时，仅停止分发新事件是不够的（已按下的音符会继续响）。因此必须同时发送：
+
+- `AllNotesOff`（让音符进入 release 衰减）
+- `ControlEvent::Raw(64, 0)`（松开 sustain 踏板，防止音符被踏板吊住）
 
 ---
 

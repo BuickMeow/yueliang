@@ -1,6 +1,6 @@
 # 模块结构
 
-> 最后更新：2026-04-14-03-49-32
+> 最后更新：2026-04-15-10-18-04
 > 当前阶段：v0.0.2
 
 ## 文件组织
@@ -13,14 +13,15 @@ src/
 │   ├── left_bar.rs     # 左侧导航栏（Transport/Soundfonts/Channels）
 │   ├── transport.rs    # MIDI 走带面板（文件加载 + 播放控制预留）
 │   ├── sf_manager.rs   # 音色库管理器（16端口 + 多音色 + 拖拽排序）
-│   └── sf_list.rs      # 音色库列表（多选、右键菜单、开关）
+│   ├── sf_list.rs      # 音色库列表（多选、右键菜单、开关）
+│   └── channel_matrix.rs # 256 通道开关矩阵（16 端口 × 16 通道）
 ├── engine.rs           # 模块聚合入口（pub mod / pub use）
 ├── engine/
 │   ├── synth.rs        # xsynth 封装（渲染、音色加载）
 │   ├── pipeline.rs     # 音频处理管线（gain、缓冲区写入）
-│   ├── midi_player.rs  # MIDI 时间线调度器（走带同步、事件分发、Chase）
+│   ├── midi_player.rs  # MIDI 时间线调度器（走带同步、事件分发、Chase、通道状态跟踪）
 │   ├── midi_mapper.rs  # MIDI 协议映射层（纯函数）
-│   └── midi_filter.rs  # MIDI 预过滤层（力度过滤、强制最大力度）
+│   └── midi_filter.rs  # MIDI 预过滤层（力度过滤、通道静音、强制最大力度）
 ├── data.rs             # 数据模块聚合入口
 ├── data/
 │   ├── event.rs        # MIDI 领域模型（MidiEvent / MidiMessage）
@@ -74,6 +75,13 @@ src/
 - 禁止文字选中（`Label::selectable(false)`），避免干扰点击/拖拽
 - 右键菜单（上移/下移/移除）
 
+**editor/channel_matrix.rs**
+- 256 通道开关矩阵 UI（16 端口 × 16 通道）
+- 表头控制：点击 Port A-P 开关整行，点击 Channel 1-16 开关整列
+- 右键 Solo：单格/整行/整列独奏（已 Solo 时再次右键恢复全部）
+- 使用 `egui::Grid` + `ui.add_sized()` 精确固定 24×24 按钮尺寸
+- 状态持久化通过 `YueliangParams.channel_matrix`（`Arc<Mutex<Vec<bool>>>`）
+
 ### engine
 音频处理核心模块聚合层。
 
@@ -107,6 +115,9 @@ src/
 - **MIDI Chase**：跳转时向前搜索 CC/PC/PB 最新状态并注入
   - 实时线性搜索，零预存储内存
   - 支持百万级事件规模
+- **通道矩阵状态跟踪**：维护 `last_mutes: [bool; 256]`
+  - 通道从发声变静音：立即发送 `AllNotesOff` + `Sustain Pedal Off (CC64=0)`
+  - 通道从静音恢复：执行单通道 Chase，恢复最新控制器状态
 - 走带暂停时触发 `all_notes_off()`
 - 恢复播放前触发 `all_notes_killed()` 清除残留
 - 时间戳转换（DAW beats ↔ ticks）
@@ -117,6 +128,7 @@ src/
 - 无状态纯函数
 - `velocity_threshold`：丢弃低于阈值的音符
 - `force_max_velocity`：将力度统一设为 127
+- **通道矩阵过滤**：根据 `[bool; 256]` 局部数组静音指定通道，每个 buffer 只 lock 一次参数
 - 在 `midi_mapper` 之前执行，减少无效 voice 分配
 
 **engine/midi_mapper.rs**
@@ -150,10 +162,21 @@ src/
   SF2/SFZ文件 → synth.rs → xsynth ChannelGroup
 
 播放阶段（实时，每buffer）：
-  DAW Transport → midi_player.process()
+  DAW Transport → midi_player.process(mutes)
     ↓
   [Chase检测] → 跳转时向前搜索CC/PC/PB → synth.send_event()
     ↓
-  [事件分发] → midi_filter → midi_mapper → synth.send_event()
+  [通道状态变化检测]
+    - 某通道从发声→静音：发送 AllNotesOff + CC64=0
+    - 某通道从静音→发声：执行单通道 Chase
+    ↓
+  [事件分发] → midi_filter(mutes) → midi_mapper → synth.send_event()
     ↓
   synth.read_samples() → pipeline (gain) → DAW Buffer
+```
+
+**Channel Matrix 数据流**：
+- UI 编辑 → `YueliangParams.channel_matrix`（`Arc<Mutex<Vec<bool>>>`）
+- `lib.rs::process()`：每个 buffer lock 一次，复制为 `[bool; 256]`
+- `midi_player.process()`：对比 `last_mutes`，检测状态翻转并执行 Chase / AllNotesOff
+- `midi_filter.apply_filter()`：基于局部数组索引快速过滤静音通道事件
