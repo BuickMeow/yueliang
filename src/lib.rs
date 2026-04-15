@@ -103,7 +103,8 @@ pub struct Yueliang {
     params: Arc<YueliangParams>,
     engine: Arc<Mutex<Option<engine::SynthEngine>>>,
     pipeline: engine::Pipeline,
-    midi_player: Arc<Mutex<engine::MidiPlayer>>,  
+    midi_player: Arc<Mutex<engine::MidiPlayer>>, 
+    last_mutes: [bool; 256], 
 }
 
 impl Default for Yueliang {
@@ -113,6 +114,7 @@ impl Default for Yueliang {
             engine: Arc::new(Mutex::new(None)),
             pipeline: engine::Pipeline::new(),
             midi_player: Arc::new(Mutex::new(engine::MidiPlayer::new())), 
+            last_mutes: [true; 256],
         }
     }
 }
@@ -180,6 +182,11 @@ impl Plugin for Yueliang {
         let max_frames = buffer_config.max_buffer_size as usize;
         self.pipeline = engine::Pipeline::with_capacity(max_frames);
 
+        // 同步 channel matrix 初始状态
+        let vec = self.params.channel_matrix.lock();
+        for (i, &v) in vec.iter().enumerate() {
+            self.last_mutes[i] = v;
+        }
         true
     }
 
@@ -202,12 +209,23 @@ impl Plugin for Yueliang {
         if let Some(ref mut engine) = engine_guard.as_mut() {
             let transport = context.transport();
             let num_frames = buffer.samples();
-            midi_player.process(transport, engine, &self.params, num_frames);
+
+            let mutes: [bool; 256] = {
+                let vec = self.params.channel_matrix.lock();
+                let mut arr = [true; 256];
+                for (i, &v) in vec.iter().enumerate() {
+                    arr[i] = v;
+                }
+                arr
+            };
+
+            midi_player.process(transport, engine, &self.params, num_frames, &mutes);
             self.pipeline.render(buffer, engine, &self.params);
         }
 
         ProcessStatus::Normal
     }
+
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         editor::create(

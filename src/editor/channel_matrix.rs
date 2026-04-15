@@ -18,10 +18,11 @@ pub fn draw(ui: &mut egui::Ui, state: &ChannelMatrixState) {
     ui.separator();
 
     let mut matrix = state.matrix.lock();
-    let cell_size = egui::vec2(20.0, 20.0);
+    let cell_size = egui::vec2(24.0, 24.0);
 
     egui::Grid::new("channel_matrix_grid")
         .spacing([2.0, 2.0])
+        .min_col_width(0.0)
         .show(ui, |ui| {
             // 左上角留空
             ui.label("");
@@ -30,8 +31,12 @@ pub fn draw(ui: &mut egui::Ui, state: &ChannelMatrixState) {
             for ch in 1..=16 {
                 let header_btn = egui::Button::new(format!("{}", ch))
                     .min_size(cell_size);
-                if ui.add(header_btn).clicked() {
+                let response = ui.add(header_btn);
+                if response.clicked() {
                     toggle_column(&mut *matrix, ch - 1);
+                }
+                if response.secondary_clicked() {
+                    solo_column(&mut *matrix, ch - 1);
                 }
             }
             ui.end_row();
@@ -41,8 +46,12 @@ pub fn draw(ui: &mut egui::Ui, state: &ChannelMatrixState) {
                 let port_label = format!("{}", (b'A' + port as u8) as char);
                 let row_btn = egui::Button::new(port_label)
                     .min_size(cell_size);
-                if ui.add(row_btn).clicked() {
+                let response = ui.add(row_btn);
+                if response.clicked() {
                     toggle_row(&mut *matrix, port);
+                }
+                if response.secondary_clicked() {
+                    solo_row(&mut *matrix, port);
                 }
 
                 for ch in 0..16 {
@@ -59,8 +68,12 @@ pub fn draw(ui: &mut egui::Ui, state: &ChannelMatrixState) {
                         .fill(fill)
                         .min_size(cell_size);
                     
-                    if ui.add(btn).clicked() {
+                    let response = ui.add(btn);
+                    if response.clicked() {
                         matrix[idx] = !active;
+                    }
+                    if response.secondary_clicked() {
+                        solo_cell(&mut *matrix, idx);
                     }
                 }
                 ui.end_row();
@@ -68,7 +81,27 @@ pub fn draw(ui: &mut egui::Ui, state: &ChannelMatrixState) {
         });
 }
 
-/// 切换整行：如果该端口所有通道都开着，就全关；否则全开
+fn solo_cell(matrix: &mut Vec<bool>, idx: usize) {
+    for (i, v) in matrix.iter_mut().enumerate() {
+        *v = i == idx;
+    }
+}
+
+fn solo_row(matrix: &mut Vec<bool>, port: usize) {
+    let start = port * 16;
+    for i in 0..256 {
+        matrix[i] = (start..start + 16).contains(&i);
+    }
+}
+
+fn solo_column(matrix: &mut Vec<bool>, ch: usize) {
+    for port in 0..16 {
+        for c in 0..16 {
+            matrix[port * 16 + c] = c == ch;
+        }
+    }
+}
+
 fn toggle_row(matrix: &mut Vec<bool>, port: usize) {
     let start = port * 16;
     let all_on = matrix[start..start + 16].iter().all(|&b| b);
@@ -77,7 +110,6 @@ fn toggle_row(matrix: &mut Vec<bool>, port: usize) {
     }
 }
 
-/// 切换整列：如果该通道在所有端口都开着，就全关；否则全开
 fn toggle_column(matrix: &mut Vec<bool>, ch: usize) {
     let all_on = (0..16).all(|port| matrix[port * 16 + ch]);
     for port in 0..16 {

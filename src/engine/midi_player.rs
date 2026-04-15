@@ -3,6 +3,9 @@ use crate::engine::{SynthEngine, midi_mapper, midi_filter};
 use crate::data::event::{MidiEvent, MidiMessage};
 use crate::YueliangParams;
 
+use xsynth_core::channel::{ChannelAudioEvent, ChannelEvent, ControlEvent};
+use xsynth_core::channel_group::SynthEvent;
+
 const CC_BANK_SELECT_MSB: u8 = 0;
 const CC_BANK_SELECT_LSB: u8 = 32;
 const CC_RPN_MSB: u8 = 101;
@@ -48,7 +51,7 @@ pub struct MidiPlayer {
     event_index: usize,
     was_playing: bool,
     last_tick: f64,
-    //state_table: StateTable,
+    last_mutes: [bool; 256],
 }
 
 impl MidiPlayer {
@@ -59,7 +62,7 @@ impl MidiPlayer {
             event_index: 0,
             was_playing: false,
             last_tick: 0.0,
-            //state_table: StateTable::new(),
+            last_mutes: [true; 256],
         }
     }
 
@@ -70,6 +73,7 @@ impl MidiPlayer {
         self.ppqn = ppqn;
         self.event_index = 0;
         self.last_tick = 0.0;
+        self.last_mutes = [true; 256];
     }
 
     pub fn process(
@@ -78,10 +82,11 @@ impl MidiPlayer {
         engine: &mut SynthEngine,
         params: &YueliangParams,
         num_frames: usize,
+        mutes: &[bool; 256],
     ) {
         let is_playing = transport.playing;
 
-        // 1. DAW 暂停：发送 AllNotesOff 并且松开踏板
+        // 1. DAW 暂停
         if !is_playing {
             if self.was_playing {
                 engine.all_notes_off();
@@ -91,7 +96,7 @@ impl MidiPlayer {
             return;
         }
 
-        // 2. DAW 开始播放（从暂停恢复）：重置控制器，之后会重新追踪控制器状态
+        // 2. DAW 开始播放（从暂停恢复）
         if is_playing && !self.was_playing {
             engine.system_reset();
         }
@@ -100,17 +105,15 @@ impl MidiPlayer {
         let sample_rate = engine.sample_rate() as f64;
         let pos_beats = transport.pos_beats().unwrap_or(0.0);
 
-        // tick 映射：1 beat = ppqn ticks
         let current_tick = pos_beats * self.ppqn as f64;
         let tick_delta = num_frames as f64 * bpm * self.ppqn as f64 / (60.0 * sample_rate);
         let end_tick = current_tick + tick_delta;
 
-        // 播放头跳转检测（scrub / 循环 / 暂停后恢复）
+        // 3. 播放头跳转检测 + Chase
         if (current_tick - self.last_tick).abs() > self.ppqn as f64 * 0.5 {
             engine.system_reset();
             self.event_index = self.find_event_index(current_tick);
 
-            // Chase：向前搜索 CC/PC/PB 的最新状态并发送
             for event in self.chase_events(current_tick as u64) {
                 if let Some(synth_event) = midi_mapper::map_midi_event(&event) {
                     engine.send_event(synth_event);
@@ -118,7 +121,33 @@ impl MidiPlayer {
             }
         }
 
-        // 分发本 buffer 内的事件
+        // === 通道静音/恢复状态变化处理 ===
+        for ch in 0..256 {
+            // 1. 从发声变为静音：立即切断该通道所有音符并松开踏板
+            if self.last_mutes[ch] && !mutes[ch] {
+                engine.send_event(SynthEvent::Channel(
+                    ch as u32,
+                    ChannelEvent::Audio(ChannelAudioEvent::AllNotesOff),
+                ));
+                engine.send_event(SynthEvent::Channel(
+                    ch as u32,
+                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(64, 0))),
+                ));
+            }
+            
+            // 2. 从静音恢复：Chase 该通道的最新控制器状态
+            if !self.last_mutes[ch] && mutes[ch] {
+                for event in self.chase_single_channel(current_tick as u64, ch as u8) {
+                    if let Some(synth_event) = midi_mapper::map_midi_event(&event) {
+                        engine.send_event(synth_event);
+                    }
+                }
+            }
+        }
+        self.last_mutes = *mutes;
+
+
+        // 4. 分发本 buffer 内的事件
         while self.event_index < self.events.len() {
             let event = &self.events[self.event_index];
             let event_tick = event.tick as f64;
@@ -128,7 +157,7 @@ impl MidiPlayer {
             }
 
             if event_tick >= current_tick {
-                if let Some(filtered) = midi_filter::apply_filter(event, params) {
+                if let Some(filtered) = midi_filter::apply_filter(event, params, mutes) {
                     if let Some(synth_event) = midi_mapper::map_midi_event(&filtered) {
                         engine.send_event(synth_event);
                     }
@@ -225,6 +254,67 @@ impl MidiPlayer {
             }
         }
 
+        result
+    }
+
+    /*pub fn ppqn(&self) -> u16 {
+        self.ppqn
+    }*/
+
+        pub fn chase_single_channel(&self, target_tick: u64, channel: u8) -> Vec<MidiEvent> {
+        let mut result = Vec::new();
+        if self.events.is_empty() {
+            return result;
+        }
+
+        let mut cc_state: [Option<u8>; 128] = [None; 128];
+        let mut pc_state: Option<u8> = None;
+        let mut pb_state: Option<i16> = None;
+
+        for event in &self.events {
+            if event.tick >= target_tick {
+                break;
+            }
+            if event.channel != channel {
+                continue;
+            }
+            match event.message {
+                MidiMessage::ControlChange { cc, value } => {
+                    cc_state[cc as usize] = Some(value);
+                }
+                MidiMessage::ProgramChange { pc } => {
+                    pc_state = Some(pc);
+                }
+                MidiMessage::PitchBend { value } => {
+                    pb_state = Some(value);
+                }
+                _ => {}
+            }
+        }
+
+        for &cc_num in CHASE_CC_LIST {
+            if let Some(value) = cc_state[cc_num as usize] {
+                result.push(MidiEvent {
+                    tick: target_tick,
+                    channel,
+                    message: MidiMessage::ControlChange { cc: cc_num, value },
+                });
+            }
+        }
+        if let Some(pc) = pc_state {
+            result.push(MidiEvent {
+                tick: target_tick,
+                channel,
+                message: MidiMessage::ProgramChange { pc },
+            });
+        }
+        if let Some(value) = pb_state {
+            result.push(MidiEvent {
+                tick: target_tick,
+                channel,
+                message: MidiMessage::PitchBend { value },
+            });
+        }
         result
     }
 }
