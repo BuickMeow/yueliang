@@ -49,6 +49,9 @@ pub struct YueliangParams {
     #[persist = "port_soundfonts"]
     pub port_soundfonts: Arc<Mutex<[PortSoundfonts; (NUM_CHANNELS / 16) as usize]>>,
 
+    #[persist = "channel_matrix"]
+    pub channel_matrix: Arc<Mutex<Vec<bool>>>,
+
     #[id = "gain"]
     pub gain: FloatParam,
 
@@ -91,6 +94,7 @@ impl Default for YueliangParams {
             force_max_velocity: BoolParam::new("Force Max Velocity", false),
             interpolation: EnumParam::new("Interpolation", InterpolationMode::Linear),
             enable_limiter: BoolParam::new("Enable Limiter", true),
+            channel_matrix: Arc::new(Mutex::new(vec![true; 256])),
         }
     }
 }

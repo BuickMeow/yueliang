@@ -16,6 +16,7 @@ mod left_bar;
 mod transport;
 mod sf_manager;
 mod sf_list;
+mod channel_matrix;
 
 pub struct EditorState {
     pub params: Arc<crate::YueliangParams>,
@@ -60,6 +61,7 @@ pub fn create(
     thread_local! {
         static TRANSPORT: RefCell<Option<transport::TransportState>> = RefCell::new(None);
         static SF_MANAGER: RefCell<Option<sf_manager::SfManagerState>> = RefCell::new(None);
+        static CHANNEL_MATRIX: RefCell<Option<channel_matrix::ChannelMatrixState>> = RefCell::new(None); // 新增
     }
 
     egui::CentralPanel::default().show(egui_ctx, |ui| {
@@ -88,7 +90,14 @@ pub fn create(
                 sf_manager::draw(ui, &s);
             }
             left_bar::LeftTab::Channels => {
-                ui.label("Channel Matrix (256ch + Drum Config)");
+                let cm = CHANNEL_MATRIX.with(|c| {
+                    c.borrow_mut().get_or_insert_with(|| {
+                        channel_matrix::ChannelMatrixState::new(
+                            state.params.channel_matrix.clone(),
+                        )
+                    }).clone()
+                });
+                channel_matrix::draw(ui, &cm);
             }
         }
     });
