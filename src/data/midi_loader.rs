@@ -5,6 +5,7 @@ use nih_plug::prelude::nih_log;
 pub struct LoadedMidi {
     pub events: Vec<MidiEvent>,
     pub ppqn: u16,
+    pub drum_channels: [bool; 256],
 }
 
 /// 非实时安全：会分配内存、读取文件、依赖 midly
@@ -83,8 +84,41 @@ pub fn load_from_file(path: &str) -> Result<LoadedMidi, String> {
         }
     }
 
+        let mut drum_channels = [false; 256];
+    for port in 0..16 {
+        drum_channels[port * 16 + 9] = true;
+    }
+
+    for track in &smf.tracks {
+        let mut current_port: u8 = 0;
+        for event in track {
+            match event.kind {
+                TrackEventKind::Meta(MetaMessage::MidiPort(port)) => {
+                    current_port = port.as_int();
+                }
+                TrackEventKind::Midi { channel, message } => {
+                    if let MidlyMidiMessage::Controller { controller, value } = message {
+                        if controller.as_int() == 0 {
+                            let mapped = (current_port as usize)
+                                .saturating_mul(16)
+                                .saturating_add(channel.as_int() as usize);
+                            if mapped < 256 {
+                                match value.as_int() {
+                                    120 => drum_channels[mapped] = true,
+                                    121 => drum_channels[mapped] = false,
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     events.sort_by_key(|e| e.tick);
 
     nih_log!("MIDI loaded: {} events, PPQN = {}", events.len(), ppqn);
-    Ok(LoadedMidi { events, ppqn })
+    Ok(LoadedMidi { events, ppqn, drum_channels })
 }

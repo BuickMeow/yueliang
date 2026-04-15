@@ -16,6 +16,13 @@ pub enum InterpolationMode {
     Linear,
 }
 
+#[derive(Default, Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum ChannelMatrixMode {
+    #[default]
+    Mute,
+    Drum,
+}
+
 impl Default for InterpolationMode {
     fn default() -> Self {
         Self::Linear
@@ -51,6 +58,12 @@ pub struct YueliangParams {
 
     #[persist = "channel_matrix"]
     pub channel_matrix: Arc<Mutex<Vec<bool>>>,
+
+    #[persist = "drum_matrix"]
+    pub drum_matrix: Arc<Mutex<Vec<bool>>>,
+
+    #[persist = "channel_matrix_mode"]
+    pub channel_matrix_mode: Arc<Mutex<ChannelMatrixMode>>,
 
     #[id = "gain"]
     pub gain: FloatParam,
@@ -95,6 +108,8 @@ impl Default for YueliangParams {
             interpolation: EnumParam::new("Interpolation", InterpolationMode::Linear),
             enable_limiter: BoolParam::new("Enable Limiter", true),
             channel_matrix: Arc::new(Mutex::new(vec![true; 256])),
+            channel_matrix_mode: Arc::new(Mutex::new(ChannelMatrixMode::Mute)),
+            drum_matrix: Arc::new(Mutex::new(vec![false; 256])),
         }
     }
 }
@@ -104,7 +119,7 @@ pub struct Yueliang {
     engine: Arc<Mutex<Option<engine::SynthEngine>>>,
     pipeline: engine::Pipeline,
     midi_player: Arc<Mutex<engine::MidiPlayer>>, 
-    last_mutes: [bool; 256], 
+    //last_mutes: [bool; 256], 
 }
 
 impl Default for Yueliang {
@@ -114,7 +129,7 @@ impl Default for Yueliang {
             engine: Arc::new(Mutex::new(None)),
             pipeline: engine::Pipeline::new(),
             midi_player: Arc::new(Mutex::new(engine::MidiPlayer::new())), 
-            last_mutes: [true; 256],
+            //last_mutes: [true; 256],
         }
     }
 }
@@ -172,21 +187,35 @@ impl Plugin for Yueliang {
         if !midi_saved.is_empty() {
             if let Ok(loaded) = crate::data::midi_loader::load_from_file(&midi_saved) {
                 nih_log!("MIDI ready: {} events", loaded.events.len());
+                {
+                    let mut drum_vec = self.params.drum_matrix.lock();
+                    for (i, &v) in loaded.drum_channels.iter().enumerate() {
+                        drum_vec[i] = v;
+                    }
+                }
                 self.midi_player.lock().load(loaded.events, loaded.ppqn);
             }
         }
 
         *self.engine.lock() = Some(engine);
 
+        // 同步 drum matrix 到 XSynth
+        if let Some(ref mut engine) = self.engine.lock().as_mut() {
+            let drum_vec = self.params.drum_matrix.lock();
+            for (i, &v) in drum_vec.iter().enumerate() {
+                engine.set_percussion_mode(i as u32, v);
+            }
+        }
+
         // Pipeline预分配
         let max_frames = buffer_config.max_buffer_size as usize;
         self.pipeline = engine::Pipeline::with_capacity(max_frames);
 
-        // 同步 channel matrix 初始状态
+        /*// 同步 channel matrix 初始状态
         let vec = self.params.channel_matrix.lock();
         for (i, &v) in vec.iter().enumerate() {
             self.last_mutes[i] = v;
-        }
+        }*/
         true
     }
 
@@ -219,8 +248,18 @@ impl Plugin for Yueliang {
                 arr
             };
 
-            midi_player.process(transport, engine, &self.params, num_frames, &mutes);
+            let drums: [bool; 256] = {
+                let vec = self.params.drum_matrix.lock();
+                let mut arr = [false; 256];
+                for (i, &v) in vec.iter().enumerate() {
+                    arr[i] = v;
+                }
+                arr
+            };
+
+            midi_player.process(transport, engine, &self.params, num_frames, &mutes, &drums);
             self.pipeline.render(buffer, engine, &self.params);
+
         }
 
         ProcessStatus::Normal

@@ -1,21 +1,22 @@
 use nih_plug_egui::egui;
 use std::sync::Arc;
 use parking_lot::Mutex;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DragButton {
-    Left,
-    Right,
-}
+use crate::ChannelMatrixMode;
 
 #[derive(Clone)]
 pub struct ChannelMatrixState {
     pub matrix: Arc<Mutex<Vec<bool>>>,
+    pub drum_matrix: Arc<Mutex<Vec<bool>>>,
+    pub mode: Arc<Mutex<ChannelMatrixMode>>,
 }
 
 impl ChannelMatrixState {
-    pub fn new(matrix: Arc<Mutex<Vec<bool>>>) -> Self {
-        Self { matrix }
+    pub fn new(
+        matrix: Arc<Mutex<Vec<bool>>>,
+        drum_matrix: Arc<Mutex<Vec<bool>>>,
+        mode: Arc<Mutex<ChannelMatrixMode>>,
+    ) -> Self {
+        Self { matrix, drum_matrix, mode }
     }
 }
 
@@ -24,36 +25,57 @@ pub fn draw(ui: &mut egui::Ui, state: &ChannelMatrixState) {
     ui.separator();
 
     let mut matrix = state.matrix.lock();
+    let mut drum_matrix = state.drum_matrix.lock();
+    let mut mode = state.mode.lock();
     let cell_size = egui::vec2(24.0, 24.0);
-
-    let primary_down = ui.input(|i| i.pointer.primary_down());
-    let secondary_down = ui.input(|i| i.pointer.secondary_down());
-    let any_down = primary_down || secondary_down;
 
     egui::Grid::new("channel_matrix_grid")
         .spacing([2.0, 2.0])
         .min_col_width(0.0)
         .show(ui, |ui| {
-            let drag_id = ui.id().with("drag_state");
-            let mut drag_state: Option<(DragButton, usize)> = ui.memory_mut(|mem| mem.data.get_temp(drag_id));
+            // 左上角模式切换按钮
+            let mode_active = *mode == ChannelMatrixMode::Drum;
+            let mode_fill = if mode_active {
+                ui.visuals().selection.bg_fill
+            } else {
+                ui.visuals().widgets.inactive.weak_bg_fill
+            };
+            let mode_response = ui.add_sized(
+                cell_size,
+                egui::Button::new("Dr.").fill(mode_fill),
+            );
+            if mode_response.clicked() {
+                *mode = match *mode {
+                    ChannelMatrixMode::Mute => ChannelMatrixMode::Drum,
+                    ChannelMatrixMode::Drum => ChannelMatrixMode::Mute,
+                };
+            }
 
-            // 左上角空白占位
-            let _ = ui.add_sized(cell_size, egui::Button::new(""));
-            
             // 列表头：1-16
             for ch in 1..=16 {
-                let response = ui.add_sized(
-                    cell_size,
-                    egui::Button::new(format!("{}", ch)),
-                );
+                let response = ui.add_sized(cell_size, egui::Button::new(format!("{}", ch)));
                 if response.clicked() {
-                    toggle_column(&mut *matrix, ch - 1);
+                    match *mode {
+                        ChannelMatrixMode::Mute => toggle_column(&mut *matrix, ch - 1),
+                        ChannelMatrixMode::Drum => toggle_column(&mut *drum_matrix, ch - 1),
+                    }
                 }
                 if response.secondary_clicked() {
-                    if is_solo_column(&*matrix, ch - 1) {
-                        unsolo(&mut *matrix);
-                    } else {
-                        solo_column(&mut *matrix, ch - 1);
+                    match *mode {
+                        ChannelMatrixMode::Mute => {
+                            if is_solo_column(&*matrix, ch - 1) {
+                                unsolo(&mut *matrix);
+                            } else {
+                                solo_column(&mut *matrix, ch - 1);
+                            }
+                        }
+                        ChannelMatrixMode::Drum => {
+                            if is_solo_column(&*drum_matrix, ch - 1) {
+                                unsolo(&mut *drum_matrix);
+                            } else {
+                                solo_column(&mut *drum_matrix, ch - 1);
+                            }
+                        }
                     }
                 }
             }
@@ -62,58 +84,85 @@ pub fn draw(ui: &mut egui::Ui, state: &ChannelMatrixState) {
             // 16 行：A-P
             for port in 0..16 {
                 let port_label = format!("{}", (b'A' + port as u8) as char);
-                let response = ui.add_sized(
-                    cell_size,
-                    egui::Button::new(port_label),
-                );
+                let response = ui.add_sized(cell_size, egui::Button::new(port_label));
                 if response.clicked() {
-                    toggle_row(&mut *matrix, port);
+                    match *mode {
+                        ChannelMatrixMode::Mute => toggle_row(&mut *matrix, port),
+                        ChannelMatrixMode::Drum => toggle_row(&mut *drum_matrix, port),
+                    }
                 }
                 if response.secondary_clicked() {
-                    if is_solo_row(&*matrix, port) {
-                        unsolo(&mut *matrix);
-                    } else {
-                        solo_row(&mut *matrix, port);
+                    match *mode {
+                        ChannelMatrixMode::Mute => {
+                            if is_solo_row(&*matrix, port) {
+                                unsolo(&mut *matrix);
+                            } else {
+                                solo_row(&mut *matrix, port);
+                            }
+                        }
+                        ChannelMatrixMode::Drum => {
+                            if is_solo_row(&*drum_matrix, port) {
+                                unsolo(&mut *drum_matrix);
+                            } else {
+                                solo_row(&mut *drum_matrix, port);
+                            }
+                        }
                     }
                 }
 
                 for ch in 0..16 {
                     let idx = port * 16 + ch;
-                    let active = matrix[idx];
-                    
-                    let fill = if active {
-                        ui.visuals().selection.bg_fill
-                    } else {
-                        ui.visuals().widgets.inactive.weak_bg_fill
-                    };
-                    
-                    let response = ui.add_sized(
-                        cell_size,
-                        egui::Button::new("").fill(fill),
-                    );
-                    
-                    // 左键单击
-                    if response.clicked() {
-                        matrix[idx] = !active;
-                    }
-                    
-                    // 右键单击：solo / 取消 solo
-                    if response.secondary_clicked() {
-                        if is_solo_cell(&*matrix, idx) {
-                            unsolo(&mut *matrix);
-                        } else {
-                            solo_cell(&mut *matrix, idx);
+
+                    match *mode {
+                        ChannelMatrixMode::Mute => {
+                            let active = matrix[idx];
+                            let fill = if active {
+                                ui.visuals().selection.bg_fill
+                            } else {
+                                ui.visuals().widgets.inactive.weak_bg_fill
+                            };
+                            let response = ui.add_sized(
+                                cell_size,
+                                egui::Button::new("").fill(fill),
+                            );
+                            if response.clicked() {
+                                matrix[idx] = !active;
+                            }
+                            if response.secondary_clicked() {
+                                if is_solo_cell(&*matrix, idx) {
+                                    unsolo(&mut *matrix);
+                                } else {
+                                    solo_cell(&mut *matrix, idx);
+                                }
+                            }
+                        }
+                        ChannelMatrixMode::Drum => {
+                            let active = drum_matrix[idx];
+                            let fill = if active {
+                                ui.visuals().selection.bg_fill
+                            } else {
+                                ui.visuals().widgets.inactive.weak_bg_fill
+                            };
+                            let label = if active { "🔷" } else { "" };
+                            let response = ui.add_sized(
+                                cell_size,
+                                egui::Button::new(label).fill(fill),
+                            );
+                            if response.clicked() {
+                                drum_matrix[idx] = !active;
+                            }
+                            if response.secondary_clicked() {
+                                if is_solo_cell(&*drum_matrix, idx) {
+                                    unsolo(&mut *drum_matrix);
+                                } else {
+                                    solo_cell(&mut *drum_matrix, idx);
+                                }
+                            }
                         }
                     }
                 }
                 ui.end_row();
             }
-
-            // 鼠标松开时清除拖动状态
-            if !any_down {
-                drag_state = None;
-            }
-            ui.memory_mut(|mem| mem.data.insert_temp(drag_id, drag_state));
         });
 }
 

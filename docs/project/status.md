@@ -1,6 +1,6 @@
 # Yueliang 项目状态
 
-最后更新：2026-04-15-10-18-04
+最后更新：2026-04-15-13-40-02
 当前版本：v0.0.2
 
 ---
@@ -119,7 +119,7 @@
 
 ### 阶段 6 部分完成 🟡
 
-- [x] **通道矩阵（Channel Matrix）**
+  - [x] **通道矩阵（Channel Matrix）**
   - [x] 16×16 按钮网格（Port A-P × Channel 1-16 = 256 通道）
   - [x] 表头整行/整列一键开关
   - [x] 右键 Solo / 取消 Solo（支持单格、整行、整列）
@@ -127,6 +127,11 @@
   - [x] 静音时自动发送 `AllNotesOff` + `Sustain Pedal Off (CC64=0)`
   - [x] 恢复发声时自动 Chase 该通道最新 CC/PC/PB 状态
   - [ ] ~~鼠标拖动连选~~（已尝试多种实现，因 egui 交互捕获机制复杂暂时搁置）
+  - [-] **Drum 模式切换**（设计完成，部分实现中）
+    - [-] 左上角菱形按钮切换 Mute/Drum 表
+    - [-] Drum 模式下 256 按钮控制 XSynth `SetPercussionMode`
+    - [-] MIDI 加载时自动推断鼓通道（默认 port×16+9，扫描 Bank Select MSB 覆盖）
+    - [-] `drum_matrix` 持久化参数（`Vec<bool>`）
 - [ ] 路由矩阵（MIDI 通道 → VST 输出总线）
 - [ ] 参数可视化（当前 voice 数、过滤统计）
 
@@ -140,6 +145,8 @@
 
 **serde 数组长度限制**：`[bool; 256]` 不支持 `Serialize/Deserialize`（serde 仅原生支持到 32 长度），通道矩阵持久化改用 `Vec<bool>`。
 
+**Drum 状态跟踪位置**：`last_drums` 跟随 `last_mutes` 一起放在 `midi_player.rs` 中，由 `MidiPlayer::process()` 统一检测变化并发送 XSynth `SetPercussionMode` 事件。详见 `docs/decisions/drum-channel-placement.md`。
+
 ---
 
 ## 下一阶段目标
@@ -152,4 +159,4 @@
 
 ## 已知问题
 
-- `lib.rs` 中 `Yueliang.last_mutes` 字段已冗余（状态已移至 `MidiPlayer`），可后续清理。
+- 无

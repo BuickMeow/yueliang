@@ -54,54 +54,55 @@ pub fn create(
         state,
         |_, _| {},
         move |egui_ctx, _setter, state| {
-    let selected_tab = left_bar::show_side_panel(egui_ctx, &state.selected_left_tab);
+            let selected_tab = left_bar::show_side_panel(egui_ctx, &state.selected_left_tab);
 
-    // 用 thread_local 或 static 缓存子模块状态
-    use std::cell::RefCell;
-    thread_local! {
-        static TRANSPORT: RefCell<Option<transport::TransportState>> = RefCell::new(None);
-        static SF_MANAGER: RefCell<Option<sf_manager::SfManagerState>> = RefCell::new(None);
-        static CHANNEL_MATRIX: RefCell<Option<channel_matrix::ChannelMatrixState>> = RefCell::new(None); // 新增
-    }
+            // 用 thread_local 或 static 缓存子模块状态
+            use std::cell::RefCell;
+            thread_local! {
+                static TRANSPORT: RefCell<Option<transport::TransportState>> = RefCell::new(None);
+                static SF_MANAGER: RefCell<Option<sf_manager::SfManagerState>> = RefCell::new(None);
+                static CHANNEL_MATRIX: RefCell<Option<channel_matrix::ChannelMatrixState>> = RefCell::new(None); // 新增
+            }
 
-    egui::CentralPanel::default().show(egui_ctx, |ui| {
-        match selected_tab {
-            left_bar::LeftTab::Transport => {
-                let t = TRANSPORT.with(|c| {
-                    c.borrow_mut().get_or_insert_with(|| {
-                        transport::TransportState::new(
-                            state.midi_path.clone(),
-                            state.midi_player.clone(),
-                        )
-                    }).clone()  // 注意：TransportState 里的字段都是 Arc，clone 很便宜
-                });
-                transport::draw(ui, &t);
-                transport::process_pending(&t);
-            }
-            left_bar::LeftTab::Soundfonts => {
-                let s = SF_MANAGER.with(|c| {
-                    c.borrow_mut().get_or_insert_with(|| {
-                        sf_manager::SfManagerState::new(
-                            state.params.clone(),
-                            state.engine.clone(),
-                        )
-                    }).clone()
-                });
-                sf_manager::draw(ui, &s);
-            }
-            left_bar::LeftTab::Channels => {
-                let cm = CHANNEL_MATRIX.with(|c| {
-                    c.borrow_mut().get_or_insert_with(|| {
-                        channel_matrix::ChannelMatrixState::new(
-                            state.params.channel_matrix.clone(),
-                        )
-                    }).clone()
-                });
-                channel_matrix::draw(ui, &cm);
-            }
+            egui::CentralPanel::default().show(egui_ctx, |ui| {
+                match selected_tab {
+                    left_bar::LeftTab::Transport => {
+                        let t = TRANSPORT.with(|c| {
+                            c.borrow_mut().get_or_insert_with(|| {
+                                transport::TransportState::new(
+                                    state.midi_path.clone(),
+                                    state.midi_player.clone(),
+                                )
+                            }).clone()  // 注意：TransportState 里的字段都是 Arc，clone 很便宜
+                        });
+                        transport::draw(ui, &t);
+                        transport::process_pending(&t);
+                    }
+                    left_bar::LeftTab::Soundfonts => {
+                        let s = SF_MANAGER.with(|c| {
+                            c.borrow_mut().get_or_insert_with(|| {
+                                sf_manager::SfManagerState::new(
+                                    state.params.clone(),
+                                    state.engine.clone(),
+                                )
+                            }).clone()
+                        });
+                        sf_manager::draw(ui, &s);
+                    }
+                    left_bar::LeftTab::Channels => {
+                        let cm = CHANNEL_MATRIX.with(|c| {
+                            c.borrow_mut().get_or_insert_with(|| {
+                                channel_matrix::ChannelMatrixState::new(
+                                    state.params.channel_matrix.clone(),
+                                    state.params.drum_matrix.clone(),
+                                    state.params.channel_matrix_mode.clone(),
+                                )
+                            }).clone()
+                        });
+                        channel_matrix::draw(ui, &cm);
+                    }
+                }
+            });
         }
-    });
-}
-
     )
 }

@@ -138,4 +138,11 @@ impl SynthEngine {
         ));
         self.all_notes_killed();
     }
+
+    pub fn set_percussion_mode(&mut self, channel: u32, percussion: bool) {
+        self.core.send_event(SynthEvent::Channel(
+            channel,
+            ChannelEvent::Config(ChannelConfigEvent::SetPercussionMode(percussion)),
+        ));
+    }
 }

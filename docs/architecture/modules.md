@@ -1,6 +1,6 @@
 # 模块结构
 
-> 最后更新：2026-04-15-10-18-04
+> 最后更新：2026-04-15-13-40-02
 > 当前阶段：v0.0.2
 
 ## 文件组织
@@ -77,10 +77,11 @@ src/
 
 **editor/channel_matrix.rs**
 - 256 通道开关矩阵 UI（16 端口 × 16 通道）
-- 表头控制：点击 Port A-P 开关整行，点击 Channel 1-16 开关整列
-- 右键 Solo：单格/整行/整列独奏（已 Solo 时再次右键恢复全部）
+- **模式切换**：左上角菱形按钮在 Mute 表与 Drum 表之间切换
+- **Mute 模式**：亮起表示发声，灭表示静音；表头控制整行/整列；右键 Solo
+- **Drum 模式**：亮起并显示 `◆` 表示鼓通道，灭表示乐器通道；操作逻辑与 Mute 模式一致
 - 使用 `egui::Grid` + `ui.add_sized()` 精确固定 24×24 按钮尺寸
-- 状态持久化通过 `YueliangParams.channel_matrix`（`Arc<Mutex<Vec<bool>>>`）
+- 状态持久化通过 `YueliangParams.channel_matrix` 和 `YueliangParams.drum_matrix`（均为 `Arc<Mutex<Vec<bool>>>`）
 
 ### engine
 音频处理核心模块聚合层。
@@ -115,9 +116,9 @@ src/
 - **MIDI Chase**：跳转时向前搜索 CC/PC/PB 最新状态并注入
   - 实时线性搜索，零预存储内存
   - 支持百万级事件规模
-- **通道矩阵状态跟踪**：维护 `last_mutes: [bool; 256]`
-  - 通道从发声变静音：立即发送 `AllNotesOff` + `Sustain Pedal Off (CC64=0)`
-  - 通道从静音恢复：执行单通道 Chase，恢复最新控制器状态
+- **通道矩阵状态跟踪**：
+  - `last_mutes: [bool; 256]`：检测静音/恢复，触发 `AllNotesOff` / 单通道 Chase
+  - `last_drums: [bool; 256]`：检测鼓模式变化，触发 `SynthEngine::set_percussion_mode()`
 - 走带暂停时触发 `all_notes_off()`
 - 恢复播放前触发 `all_notes_killed()` 清除残留
 - 时间戳转换（DAW beats ↔ ticks）
@@ -149,8 +150,12 @@ src/
 - 非实时文件解析模块
 - 使用 `midly` 读取 MIDI 文件
 - 提取 `PPQN` 和音符事件（含 CC、PitchBend、ProgramChange）
+- **鼓通道推断**：扫描 Bank Select MSB (CC#0)
+  - 默认每个 Port 的 Channel 10（0-based 索引 9）为鼓
+  - `CC0=120` (XG drum) → 强制设为鼓
+  - `CC0=121` (XG melody) → 强制设为乐器（覆盖默认）
 - 忽略 MIDI 原生 `SetTempo`，完全交给 DAW BPM 控制
-- 返回 `LoadedMidi { events, ppqn }`
+- 返回 `LoadedMidi { events, ppqn, drum_channels }`
 
 ---
 
@@ -162,13 +167,14 @@ src/
   SF2/SFZ文件 → synth.rs → xsynth ChannelGroup
 
 播放阶段（实时，每buffer）：
-  DAW Transport → midi_player.process(mutes)
+  DAW Transport → midi_player.process(mutes, drums)
     ↓
   [Chase检测] → 跳转时向前搜索CC/PC/PB → synth.send_event()
     ↓
   [通道状态变化检测]
     - 某通道从发声→静音：发送 AllNotesOff + CC64=0
     - 某通道从静音→发声：执行单通道 Chase
+    - 某通道鼓模式变化：发送 SetPercussionMode
     ↓
   [事件分发] → midi_filter(mutes) → midi_mapper → synth.send_event()
     ↓
@@ -176,7 +182,9 @@ src/
 ```
 
 **Channel Matrix 数据流**：
-- UI 编辑 → `YueliangParams.channel_matrix`（`Arc<Mutex<Vec<bool>>>`）
+- UI 编辑 → `YueliangParams.channel_matrix` / `drum_matrix`（`Arc<Mutex<Vec<bool>>>`）
 - `lib.rs::process()`：每个 buffer lock 一次，复制为 `[bool; 256]`
-- `midi_player.process()`：对比 `last_mutes`，检测状态翻转并执行 Chase / AllNotesOff
+- `midi_player.process()`：
+  - 对比 `last_mutes`，检测状态翻转并执行 Chase / AllNotesOff
+  - 对比 `last_drums`，检测鼓模式变化并调用 `synth.set_percussion_mode()`
 - `midi_filter.apply_filter()`：基于局部数组索引快速过滤静音通道事件

@@ -52,6 +52,7 @@ pub struct MidiPlayer {
     was_playing: bool,
     last_tick: f64,
     last_mutes: [bool; 256],
+    last_drums: [bool; 256],
 }
 
 impl MidiPlayer {
@@ -63,6 +64,7 @@ impl MidiPlayer {
             was_playing: false,
             last_tick: 0.0,
             last_mutes: [true; 256],
+            last_drums: [false; 256],
         }
     }
 
@@ -74,6 +76,7 @@ impl MidiPlayer {
         self.event_index = 0;
         self.last_tick = 0.0;
         self.last_mutes = [true; 256];
+        self.last_drums = [false; 256];
     }
 
     pub fn process(
@@ -83,6 +86,7 @@ impl MidiPlayer {
         params: &YueliangParams,
         num_frames: usize,
         mutes: &[bool; 256],
+        drums: &[bool; 256],
     ) {
         let is_playing = transport.playing;
 
@@ -146,6 +150,13 @@ impl MidiPlayer {
         }
         self.last_mutes = *mutes;
 
+        // === 鼓模式状态变化处理 ===
+        for ch in 0..256 {
+            if self.last_drums[ch] != drums[ch] {
+                engine.set_percussion_mode(ch as u32, drums[ch]);
+            }
+        }
+        self.last_drums = *drums;
 
         // 4. 分发本 buffer 内的事件
         while self.event_index < self.events.len() {
